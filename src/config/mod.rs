@@ -44,7 +44,7 @@ impl Rgba {
 }
 
 /// The complete, validated configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub keys: Keys,
@@ -108,7 +108,7 @@ pub struct Ocr {
     pub language: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Daemon {
     /// Explicit socket path; when `None` the runtime default is used.
@@ -172,25 +172,6 @@ impl Default for Ocr {
     }
 }
 
-impl Default for Daemon {
-    fn default() -> Self {
-        Daemon { socket: None }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            keys: Keys::default(),
-            movement: Movement::default(),
-            hints: Hints::default(),
-            detection: Detection::default(),
-            ocr: Ocr::default(),
-            daemon: Daemon::default(),
-        }
-    }
-}
-
 impl Config {
     /// The conventional config path: `$XDG_CONFIG_HOME/mouseless/config.toml`,
     /// falling back to `~/.config/mouseless/config.toml`.
@@ -218,13 +199,11 @@ impl Config {
                 })
             }
         };
-        let config: Config = toml::from_str(&text)?;
-        config.validate()?;
-        Ok(config)
+        Config::from_toml(&text)
     }
 
-    /// Parse from a string (used by tests and by the hot-reload path).
-    pub fn from_str(text: &str) -> Result<Config> {
+    /// Parse and validate config from a TOML string.
+    pub fn from_toml(text: &str) -> Result<Config> {
         let config: Config = toml::from_str(text)?;
         config.validate()?;
         Ok(config)
@@ -278,7 +257,7 @@ mod tests {
     #[test]
     fn example_config_parses() {
         let text = include_str!("../../mouseless.example.toml");
-        let cfg = Config::from_str(text).expect("example config should parse");
+        let cfg = Config::from_toml(text).expect("example config should parse");
         assert_eq!(cfg.keys.hint_alphabet, "asdfghjkl");
         assert_eq!(cfg.movement.large_step, 160);
         assert_eq!(cfg.detection.backends, vec![Backend::AtSpi, Backend::Ocr]);
@@ -286,7 +265,7 @@ mod tests {
 
     #[test]
     fn partial_config_keeps_defaults() {
-        let cfg = Config::from_str("[movement]\nstep = 5\n").unwrap();
+        let cfg = Config::from_toml("[movement]\nstep = 5\n").unwrap();
         assert_eq!(cfg.movement.step, 5);
         // Untouched sections fall back to defaults.
         assert_eq!(cfg.keys.hint_alphabet, Keys::default().hint_alphabet);
@@ -294,13 +273,13 @@ mod tests {
 
     #[test]
     fn duplicate_alphabet_char_is_rejected() {
-        let err = Config::from_str("[keys]\nhint_alphabet = \"aab\"\n").unwrap_err();
+        let err = Config::from_toml("[keys]\nhint_alphabet = \"aab\"\n").unwrap_err();
         assert!(matches!(err, Error::Config(_)));
     }
 
     #[test]
     fn unknown_field_is_rejected() {
-        let err = Config::from_str("[movement]\nnope = 1\n").unwrap_err();
+        let err = Config::from_toml("[movement]\nnope = 1\n").unwrap_err();
         assert!(matches!(err, Error::ConfigParse(_)));
     }
 
