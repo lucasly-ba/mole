@@ -154,7 +154,17 @@ two tiers:
 validation, the hint label algorithm (uniqueness + prefix-freedom across many
 sizes), live matching, anti-overlap layout, adaptive-contrast colour choice, the
 cairo render producing the expected buffer, OCR TSV parsing, detector dedup, the
-IPC command round-trip, modifier parsing, keysym mapping.
+IPC command round-trip, modifier parsing, keysym mapping. The per-module unit
+tests live inline (`#[cfg(test)]`) so they can reach private helpers.
+
+**Integration-tested** (`tests/pipeline.rs`): the seams between modules, which
+the isolated unit tests can't see. A `FakeDetector` implementing the public
+`Detector` trait feeds the exact chain `run_hint` uses — detect → `generate_labels`
+→ `place_hints` → `HintMatcher` — and asserts that typing a label lands on the
+right *element centre* (not the label-box corner), that every label among 30
+elements is reachable, that stacked elements stay individually selectable, that a
+dead-end keystroke doesn't strand the user, and that edge boxes clamp on-screen.
+All display-free, so it runs in the sandbox alongside the unit tests.
 
 **Structurally complete, needs a real X session to verify end-to-end**: the
 GetImage capture, the overlay window creation/keyboard grab, XTest clicks/drags,
