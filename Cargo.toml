@@ -1,0 +1,72 @@
+[package]
+name = "mouseless"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Keyboard-only mouse navigation for Linux/X11, with Vimium-style hints driven by AT-SPI and OCR."
+authors = ["Lucas Ly Ba <hi@lucaslyba.com>"]
+license = "MIT"
+repository = "https://github.com/lucaslyba/mouseless"
+readme = "README.md"
+keywords = ["x11", "accessibility", "keyboard", "mouse", "hints"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "mouseless"
+path = "src/main.rs"
+
+[lib]
+name = "mouseless"
+path = "src/lib.rs"
+
+[features]
+default = ["ocr"]
+# OCR fallback. Implemented by shelling out to the `tesseract` binary, so the
+# feature only gates compilation of the fallback path -- no extra build-time
+# native dependency is pulled in.
+ocr = []
+
+[dependencies]
+# --- X11 (capture, overlay, input, XTest) ---
+# The pure-Rust connection backend is used, so libxcb is not a hard build dep.
+x11rb = { version = "0.13", features = [
+    "composite",
+    "shape",
+    "xtest",
+    "xfixes",
+    "render",
+    "allow-unsafe-code",
+] }
+
+# --- Overlay rendering ---
+# Only the in-memory ImageSurface API is used; the rendered buffer is uploaded
+# to the X overlay with x11rb's PutImage. This keeps cairo-xcb out of the build.
+cairo-rs = "0.20"
+
+# --- AT-SPI over D-Bus (pure Rust). Default features give us the blocking API
+#     plus the async-io runtime it is built on. ---
+zbus = "4"
+zvariant = "4"
+
+# --- Clipboard (X11 backend is pure Rust via x11rb) ---
+arboard = { version = "3", default-features = false }
+
+# --- Config ---
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+notify = "6"
+
+# --- CLI / plumbing ---
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+thiserror = "1"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+proptest = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

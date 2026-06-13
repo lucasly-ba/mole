@@ -1,0 +1,57 @@
+# mouseless configuration
+#
+# Default search path: $XDG_CONFIG_HOME/mouseless/config.toml
+#                      (falls back to ~/.config/mouseless/config.toml)
+#
+# The running daemon watches this file and hot-reloads it on save.
+
+[keys]
+# Keys used to build the 2-character hint labels. Order matters: the first
+# characters of the alphabet are assigned to the top-left elements.
+hint_alphabet = "asdfghjkl"
+
+# Directional movement keys for the free-move (hjkl) mode.
+move_left = "h"
+move_down = "j"
+move_up = "k"
+move_right = "l"
+
+# Press while moving to take a large step instead of a small one.
+large_step_modifier = "shift"
+
+[movement]
+# Pixels moved per key press.
+step = 24
+large_step = 160
+
+[hints]
+# RGBA (0-255). Background of a hint label box.
+background = [255, 220, 90, 230]
+# Text colour.
+foreground = [20, 20, 20, 255]
+# Text colour drawn when the box sits on a bright background (adaptive contrast).
+foreground_dark = [240, 240, 240, 255]
+# Box that has been partially matched by the keys typed so far.
+matched = [120, 220, 120, 230]
+font_family = "monospace"
+font_size = 13.0
+# Minimum gap (px) enforced between two hint boxes by the anti-overlap pass.
+min_gap = 4
+
+[detection]
+# Detection backends tried in order. Valid values: "atspi", "ocr".
+backends = ["atspi", "ocr"]
+# Ignore elements smaller than this many pixels on either axis (noise).
+min_element_size = 6
+# Ignore elements whose label text is empty (AT-SPI often exposes blanks).
+require_text = false
+
+[ocr]
+# Path/name of the tesseract binary used for the OCR fallback.
+binary = "tesseract"
+language = "eng"
+
+[daemon]
+# Unix socket the daemon listens on. The CLI talks to it over this socket.
+# Defaults to $XDG_RUNTIME_DIR/mouseless.sock when unset.
+# socket = "/run/user/1000/mouseless.sock"
