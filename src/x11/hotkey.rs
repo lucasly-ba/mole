@@ -4,9 +4,12 @@
 //! focus. Each grab is registered four times to stay robust against the
 //! Caps-Lock and Num-Lock modifier bits, which X ORs into the event state.
 //!
-//! The daemon runs a [`HotkeyManager`] on its own connection/thread and turns
-//! key presses into named actions it feeds into the command loop. This gives
-//! mouseless a standalone trigger path in addition to the i3-via-socket one.
+//! [`HotkeyManager`] is the standalone trigger path: register a combination and
+//! block on [`HotkeyManager::wait`] for its action name. It owns its grabs on a
+//! connection so they survive independently of the overlay. In practice most
+//! users trigger mouseless via the daemon's Unix socket from their window manager
+//! (`exec mouseless click`), so this path is here for setups that would rather
+//! grab the key directly than route through a WM binding.
 
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{ConnectionExt as _, GrabMode, ModMask};

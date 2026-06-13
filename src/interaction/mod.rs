@@ -33,12 +33,3 @@ pub fn copy_primary_to_clipboard() -> Result<String> {
 
     Ok(text)
 }
-
-/// Set the CLIPBOARD selection to `text`.
-pub fn set_clipboard(text: &str) -> Result<()> {
-    let mut clipboard = Clipboard::new().map_err(|e| Error::X11(format!("clipboard: {e}")))?;
-    clipboard
-        .set_text(text.to_string())
-        .map_err(|e| Error::X11(format!("writing CLIPBOARD: {e}")))?;
-    Ok(())
-}

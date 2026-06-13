@@ -63,7 +63,6 @@ pub struct Keys {
     pub move_down: String,
     pub move_up: String,
     pub move_right: String,
-    pub large_step_modifier: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -125,7 +124,6 @@ impl Default for Keys {
             move_down: "j".to_string(),
             move_up: "k".to_string(),
             move_right: "l".to_string(),
-            large_step_modifier: "shift".to_string(),
         }
     }
 }

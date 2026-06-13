@@ -16,11 +16,8 @@ move_down = "j"
 move_up = "k"
 move_right = "l"
 
-# Press while moving to take a large step instead of a small one.
-large_step_modifier = "shift"
-
 [movement]
-# Pixels moved per key press.
+# Pixels moved per key press. Hold Shift while moving for the large step.
 step = 24
 large_step = 160
 
