@@ -119,18 +119,31 @@ the systems modules together; `daemon` drives `session`.
   bytes to the window with `PutImage`, instead of using a cairo-xcb surface. That
   keeps `cairo-xcb` (and a libxcb FFI dependency) out of the build *and* makes
   rendering unit-testable with no display. Anti-overlap is in `hint/layout.rs`;
-  adaptive contrast (text colour chosen by luminance) in `palette.rs`.
+  adaptive contrast (text colour chosen by luminance) in `palette.rs`. The
+  opaque backdrop is the expensive part of a frame (a per-pixel pass over the
+  whole screen), so it is built once per interaction as a `render::Backdrop` and
+  reused: each keystroke's repaint is then just a blit plus the labels, and the
+  heavy pass runs *before* the overlay is mapped so showing it doesn't flash.
 
 ### Phase 3 — Detection
 
 Detection is OCR, end to end, split into small single-purpose steps under
 `detect/ocr/`:
 
-- **§3.1 Reading the screen** → `ocr/tesseract.rs`. **Decision:** shell out to the
-  `tesseract` binary (PPM in, TSV out) rather than link its C API. No extra native
-  build dependency, and the OCR engine becomes trivially swappable (PaddleOCR
-  behind the same step). Run with `--psm 11` ("sparse text") so it finds text
-  *anywhere*, not just in one assumed text block.
+- **§3.1 Reading the screen** → `ocr/tesseract.rs` + the tiling in `ocr/mod.rs`.
+  **Decision:** shell out to the `tesseract` binary (PPM in, TSV out) rather than
+  link its C API. No extra native build dependency, and the OCR engine becomes
+  trivially swappable (PaddleOCR behind the same step). Run with `--psm 11`
+  ("sparse text") so it finds text *anywhere*, not just in one assumed text block.
+  **Speed:** OCR is by far the slowest stage (≈3 s on a 4480×1440 desktop) and
+  Tesseract is single-threaded per image, so the screen is split into
+  `ocr.tiles` overlapping horizontal strips that are OCR'd in parallel — one
+  process per strip, each capped to a share of the cores via `OMP_THREAD_LIMIT`
+  so they don't oversubscribe and thrash. That roughly halves scan time on a
+  wide multi-core display. Downscaling was rejected: halving resolution lost
+  about half the detected words. Strips overlap by `TILE_OVERLAP` so a line on a
+  cut survives; the duplicates that creates are removed by `dedup_words` (same
+  text + heavily overlapping box, keeping the fuller one) before grouping.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.
