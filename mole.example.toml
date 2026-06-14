@@ -39,6 +39,10 @@ font_family = "monospace"
 font_size = 13.0
 # Minimum gap (px) enforced between two hint boxes by the anti-overlap pass.
 min_gap = 4
+# How much to darken the frozen screenshot painted behind the hints
+# (0.0 = the screen as-is, 1.0 = black). A little dim makes the labels pop
+# while keeping the desktop clearly visible so you can see where you're jumping.
+dim = 0.2
 
 [ocr]
 # Path/name of the tesseract binary that reads the screen.

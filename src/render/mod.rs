@@ -50,8 +50,16 @@ impl Renderer {
         {
             let ctx = Context::new(&surface).map_err(Error::render)?;
 
-            // Start fully transparent.
-            ctx.set_operator(Operator::Clear);
+            // Paint the captured screen as an opaque backdrop. The alternative —
+            // leaving the overlay transparent — only shows the desktop if an X
+            // compositor is running to blend the alpha; with none, the user just
+            // sees a black screen with floating labels and can't tell where a
+            // jump lands. Painting our own snapshot makes the overlay work
+            // everywhere and shows the user exactly what they're aiming at.
+            let backdrop = screen_backdrop(width, height, screen, self.style.dim)?;
+            ctx.set_source_surface(&backdrop, 0.0, 0.0)
+                .map_err(Error::render)?;
+            ctx.set_operator(Operator::Source);
             ctx.paint().map_err(Error::render)?;
             ctx.set_operator(Operator::Over);
 
@@ -121,6 +129,41 @@ impl Renderer {
     }
 }
 
+/// Build an opaque ARGB32 surface from the captured screen, to paint behind the
+/// hints. `dim` (`0.0..=1.0`) darkens it so the labels stand out. Any overlay
+/// area not covered by the capture is left opaque black.
+fn screen_backdrop(width: i32, height: i32, screen: &Screen, dim: f64) -> Result<ImageSurface> {
+    let stride = Format::ARgb32
+        .stride_for_width(width.max(0) as u32)
+        .map_err(Error::render)?;
+    let mut buf = vec![0u8; stride as usize * height.max(0) as usize];
+
+    let keep = 1.0 - dim.clamp(0.0, 1.0);
+    let sw = screen.width().max(0);
+    let sh = screen.height().max(0);
+    // `to_rgb` is a tight, top-to-bottom R,G,B buffer in the screen's own size.
+    let rgb = screen.to_rgb();
+
+    for y in 0..height {
+        let dst_row = y as usize * stride as usize;
+        let in_y = y < sh;
+        for x in 0..width {
+            let d = dst_row + x as usize * 4;
+            if in_y && x < sw {
+                let s = (y as usize * sw as usize + x as usize) * 3;
+                // cairo ARGB32 is little-endian B,G,R,A; alpha is 255 so the
+                // premultiplied and straight forms coincide.
+                buf[d] = (rgb[s + 2] as f64 * keep) as u8; // B
+                buf[d + 1] = (rgb[s + 1] as f64 * keep) as u8; // G
+                buf[d + 2] = (rgb[s] as f64 * keep) as u8; // R
+            }
+            buf[d + 3] = 255; // opaque
+        }
+    }
+
+    ImageSurface::create_for_data(buf, Format::ARgb32, width, height, stride).map_err(Error::render)
+}
+
 /// Append a rounded-rectangle path to the current context.
 fn rounded_rect(ctx: &Context, x: f64, y: f64, w: f64, h: f64, radius: f64) {
     let r = radius.min(w / 2.0).min(h / 2.0);
@@ -148,6 +191,17 @@ mod tests {
         )
     }
 
+    fn solid_screen(b: u8, g: u8, r: u8) -> Screen {
+        let mut data = vec![0u8; 100 * 100 * 4];
+        for px in data.chunks_mut(4) {
+            px[0] = b;
+            px[1] = g;
+            px[2] = r;
+            px[3] = 255;
+        }
+        Screen::from_raw(Rect::new(0, 0, 100, 100), data, 100 * 4, 4)
+    }
+
     fn hint(label: &str) -> HintBox {
         HintBox {
             index: 0,
@@ -170,24 +224,37 @@ mod tests {
     }
 
     #[test]
-    fn nonmatching_prefix_draws_nothing() {
+    fn backdrop_is_opaque_and_shows_the_screen() {
+        // No boxes: the frame is just the backdrop. Every pixel must be opaque
+        // (so it works without a compositor) and reflect the captured screen,
+        // darkened by `dim`.
         let r = Renderer::new(Hints::default());
-        // Typed "z" matches no label, so the surface stays fully transparent.
         let frame = r
-            .render(100, 100, &[hint("aa")], "z", &blank_screen())
+            .render(100, 100, &[], "", &solid_screen(0, 0, 200))
             .unwrap();
-        assert!(
-            frame.data.iter().all(|&byte| byte == 0),
-            "no pixels should be drawn for a non-matching prefix"
-        );
+        for px in frame.data.chunks(4) {
+            assert_eq!(px[3], 255, "backdrop must be fully opaque");
+            // Little-endian ARGB32: red lives in byte 2, dimmed from 200.
+            assert!(px[2] > 0 && px[2] < 200, "red should be present but dimmed");
+        }
     }
 
     #[test]
-    fn matching_prefix_draws_something() {
+    fn nonmatching_prefix_draws_only_the_backdrop() {
+        // Typed "z" matches no label, so the frame equals the bare backdrop.
         let r = Renderer::new(Hints::default());
-        let frame = r
-            .render(100, 100, &[hint("aa")], "a", &blank_screen())
-            .unwrap();
-        assert!(frame.data.iter().any(|&byte| byte != 0));
+        let screen = solid_screen(40, 40, 40);
+        let with = r.render(100, 100, &[hint("aa")], "z", &screen).unwrap();
+        let backdrop_only = r.render(100, 100, &[], "", &screen).unwrap();
+        assert_eq!(with.data, backdrop_only.data);
+    }
+
+    #[test]
+    fn matching_prefix_draws_over_the_backdrop() {
+        let r = Renderer::new(Hints::default());
+        let screen = solid_screen(40, 40, 40);
+        let with = r.render(100, 100, &[hint("aa")], "a", &screen).unwrap();
+        let backdrop_only = r.render(100, 100, &[], "", &screen).unwrap();
+        assert_ne!(with.data, backdrop_only.data);
     }
 }
