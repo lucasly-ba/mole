@@ -5,18 +5,19 @@
 //! * [`tesseract`] — run the `tesseract` subprocess over a screen capture.
 //! * [`tsv`] — parse its TSV output into confident word boxes.
 //! * [`phrase`] — group those words into the phrase-level targets we hint.
-//! * [`cache`] — remember each strip's words so unchanged regions aren't re-read.
+//! * [`cache`] — remember words so unchanged regions of the screen aren't re-read.
 //!
 //! [`OcrDetector`] wires them together and applies the shared [`detect::finalize`]
 //! pass (size filtering + reading order) to the result.
 //!
 //! Tesseract is single-threaded per image and scanning a whole desktop is the
-//! dominant cost of a hint, so the screen is split into overlapping horizontal
-//! strips OCR'd in parallel (one `tesseract` process each). The strips double as
-//! a change cache ([`cache`]): each scan only re-reads the strips whose pixels
-//! changed since last time, which makes a hint on a mostly-static screen nearly
-//! free. Overlap means a line on a cut is fully seen by one strip; the duplicate
-//! words that creates are removed by [`dedup_words`].
+//! dominant cost of a hint, so OCR runs on horizontal bands in parallel (one
+//! `tesseract` process each). On a cold scan the bands tile the whole screen; on
+//! a warm scan the [`cache`] returns only tight bands around what actually
+//! changed, so a hint on a mostly-static screen re-reads little or nothing. Bands
+//! overlap (and large changes are split for parallelism), so a line on a cut is
+//! fully seen by one band; the duplicate words that creates are removed by
+//! [`dedup_words`].
 
 mod cache;
 mod phrase;
@@ -27,7 +28,7 @@ use std::sync::{Arc, Mutex};
 
 pub use cache::ScanCache;
 
-use cache::DirtyStrip;
+use cache::Band;
 
 use crate::capture::Screen;
 use crate::config::Config;
@@ -69,7 +70,7 @@ impl OcrDetector {
         }
     }
 
-    /// Capture-to-words, re-reading only the strips that changed since last scan.
+    /// Capture-to-words, re-reading only the bands that changed since last scan.
     /// Returns the (deduplicated) words across the whole screen.
     ///
     /// The cache lock is held across the whole scan, so the on-demand hint and
@@ -82,41 +83,41 @@ impl OcrDetector {
         let rgb = screen.to_rgb();
 
         let mut cache = self.cache.lock().unwrap();
-        let dirty = cache.diff(&rgb, width, height, self.tiles, TILE_OVERLAP);
-        log::debug!("cache: {}/{} strips changed", dirty.len(), self.tiles);
-        let fresh = self.ocr_strips(&rgb, width, region, &dirty)?;
-        for (index, words) in fresh {
-            cache.store(index, words);
+        let bands = cache.plan(&rgb, width, height, self.tiles, TILE_OVERLAP);
+        log::debug!("cache: re-reading {} band(s)", bands.len());
+        let fresh = self.ocr_bands(&rgb, width, region, &bands)?;
+        for (band, words) in fresh {
+            cache.splice(region.y, band, words);
         }
         Ok(dedup_words(cache.all_words()))
     }
 
-    /// OCR the given dirty strips in parallel, capping each process's threads so
-    /// they don't oversubscribe the cores. Returns `(strip index, words)`.
-    fn ocr_strips(
+    /// OCR the given bands in parallel, capping each process's threads so they
+    /// don't oversubscribe the cores. Returns `(band, words)`.
+    fn ocr_bands(
         &self,
         rgb: &[u8],
         width: i32,
         region: Rect,
-        dirty: &[DirtyStrip],
-    ) -> Result<Vec<(usize, Vec<Word>)>> {
-        if dirty.is_empty() {
+        bands: &[Band],
+    ) -> Result<Vec<(Band, Vec<Word>)>> {
+        if bands.is_empty() {
             return Ok(Vec::new());
         }
         let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-        let threads = (cores / dirty.len()).max(1);
+        let threads = (cores / bands.len()).max(1);
         let min_conf = self.min_confidence;
         let tess = &self.tesseract;
 
         std::thread::scope(|scope| {
-            let handles: Vec<_> = dirty
+            let handles: Vec<_> = bands
                 .iter()
-                .map(|&d| {
-                    scope.spawn(move || -> Result<(usize, Vec<Word>)> {
-                        let ppm = tesseract::encode_ppm_band(rgb, width, d.y0, d.h);
+                .map(|&b| {
+                    scope.spawn(move || -> Result<(Band, Vec<Word>)> {
+                        let ppm = tesseract::encode_ppm_band(rgb, width, b.y0, b.h);
                         let raw = tess.run(ppm, threads)?;
-                        let band = Rect::new(region.x, region.y + d.y0, width, d.h);
-                        Ok((d.index, tsv::parse(&raw, band, min_conf)))
+                        let area = Rect::new(region.x, region.y + b.y0, width, b.h);
+                        Ok((b, tsv::parse(&raw, area, min_conf)))
                     })
                 })
                 .collect();

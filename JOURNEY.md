@@ -146,26 +146,38 @@ Detection is OCR, end to end, split into small single-purpose steps under
   text + heavily overlapping box, keeping the fuller one) before grouping.
   **Caching + pre-warm** → `ocr/cache.rs` + `daemon/prewarm.rs`. Even halved, a
   full scan is too slow to do on every hint, and most hints land on a screen that
-  barely changed. So those same strips double as a change cache: the daemon owns
-  one `ScanCache`, and each scan only re-OCRs strips whose pixels changed since
-  last time, reusing cached words for the rest — a hint on a static screen does
-  no OCR at all. Crucially the change test is by *locality*, not an exact hash:
-  each strip is a grid of cells, a cell counts as changed only when a real
-  fraction of its pixels differ, and the strip is re-read only when more than a
-  couple of cells changed. A ticking clock or a blinking text caret touches one
-  or two cells and is ignored; a scroll, a new window or a typed-out line touches
-  many and is caught. An exact hash (or a flat pixel-count) made every such tiny
-  flicker re-OCR a whole dense strip, so the cache never settled in testing. On
-  top of that, a background thread watches the
-  whole screen with the X DAMAGE extension and re-reads changed strips once the
-  screen settles, so the cache is usually already current when you trigger — the
-  hint then appears with no scan at all. DAMAGE works here even with no
-  compositor (verified by probe), and reports drawing only, not pointer motion,
-  so moving the mouse never wakes it. The whole scan holds the cache lock so the
-  on-demand hint and the background warm never OCR at once (which would
-  oversubscribe the cores); pre-warm also stands down while an interaction owns
-  the screen, so it never captures mole's own overlay. `ocr.prewarm = false`
-  turns the background thread off for a purely on-demand, zero-idle-cost mode.
+  barely changed. So the daemon owns one `ScanCache` that keeps the last scan's
+  whole-screen pixels (the baseline) plus the flat list of words found. Each scan
+  diffs the new capture against the baseline and re-OCRs **only the regions that
+  changed**, splicing the fresh words in (words inside a re-read region replaced,
+  everything outside kept) — a hint on a static screen does no OCR at all.
+
+  Two things make this robust on a real desktop. First, change is judged by
+  *locality*, not an exact hash: the screen is a grid of small cells, a cell only
+  counts as changed when a real fraction of its pixels differ, and the screen is
+  only re-read when more than a couple of cells changed. A ticking clock or a
+  blinking text caret is one or two cells and is ignored; a scroll or a typed-out
+  line is many and is caught. (An exact hash, or a flat pixel count, made every
+  flicker re-OCR a whole region, so the cache never settled.) Second, the work is
+  scoped to **tight bands**: the changed cells' rows are clustered into contiguous
+  runs (padded by a margin so text straddling an edge is fully inside), and only
+  those full-width bands are OCR'd — a chat message near the bottom re-reads a
+  thin band, not half the display. A cold scan (no baseline, or after a resize)
+  tiles the whole screen into `tiles` overlapping bands; a very large change is
+  likewise split into chunks. Either way the bands run in parallel, overlap so a
+  cut line is whole in one of them, and `dedup_words` removes the resulting
+  duplicates.
+
+  On top of that, a background thread watches the whole screen with the X DAMAGE
+  extension and re-reads changed bands once the screen settles, so the cache is
+  usually already current when you trigger — the hint then appears with no scan at
+  all. DAMAGE works here even with no compositor (verified by probe), and reports
+  drawing only, not pointer motion, so moving the mouse never wakes it. The whole
+  scan holds the cache lock so the on-demand hint and the background warm never
+  OCR at once (which would oversubscribe the cores); pre-warm also stands down
+  while an interaction owns the screen, so it never captures mole's own overlay.
+  `ocr.prewarm = false` turns the background thread off for a purely on-demand,
+  zero-idle-cost mode.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.

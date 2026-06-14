@@ -1,25 +1,27 @@
-//! Incremental OCR cache: re-read only the screen strips that meaningfully changed.
+//! Incremental OCR cache: re-read only the regions of the screen that changed.
 //!
-//! The daemon is long-lived and most hints happen on a screen that is largely
-//! unchanged since the last one, so re-OCRing everything every time is wasteful.
-//! The screen is divided into the same overlapping horizontal strips as the
-//! parallel scan ([`super::plan_bands`]); for each strip we keep the pixels it
-//! had at its last OCR plus the words found in it. On the next scan each strip is
-//! compared to those pixels and only the ones that changed by more than a small
-//! fraction are read again — the rest reuse their cached words.
+//! The daemon is long-lived and most hints land on a screen that barely changed
+//! since the last one, so re-OCRing everything every time is wasteful. The cache
+//! keeps the whole-screen pixels from the last scan (the baseline) plus the flat
+//! list of words found. On the next scan it diffs against the baseline at the
+//! granularity of small **cells**, clusters the changed cells' rows into tight
+//! horizontal **bands**, and asks the detector to re-OCR only those bands. The
+//! freshly read words are spliced in: words inside a re-read band are replaced,
+//! everything outside is kept. A hint on a static screen reads nothing.
 //!
-//! Comparing by *locality* rather than an exact hash is deliberate. Each strip
-//! is divided into a grid of small cells; a cell only counts as changed when a
-//! real fraction of its pixels differ (so antialiasing and a blinking caret —
-//! a few pixels — don't register at all), and a strip is only re-read when more
-//! than a couple of cells changed. A ticking clock or a blinking text caret
-//! touches one or two cells and is ignored; a scroll, a new window or a typed-out
-//! line touches many and is caught. An exact hash, by contrast, made every such
-//! tiny flicker re-OCR a whole dense strip, so the cache never settled.
+//! Two deliberate choices keep it stable on a real desktop:
 //!
-//! Because adjacent strips overlap, a change near a boundary registers in both
-//! strips, so boundary text is never left stale. The cache is held behind a
-//! `Mutex` by the detector.
+//! * **Locality, not an exact hash.** A cell counts as changed only when a real
+//!   fraction of its pixels differ, and the screen is only re-read when more than
+//!   a couple of cells changed. A ticking clock or a blinking text caret is one
+//!   or two cells and is ignored; a scroll or a typed-out line is many and is
+//!   caught. (An exact hash made every flicker re-OCR a whole region.)
+//! * **Tight bands.** Only the changed rows (plus a margin for text that straddles
+//!   a boundary) are re-read, not the whole strip — a chat message appearing near
+//!   the bottom of the screen re-reads a thin band, not half the display.
+//!
+//! On a cold scan (or after a resize/reload) there is no baseline, so the work is
+//! the whole screen, split into `tiles` overlapping bands for parallelism.
 
 use super::phrase::Word;
 
@@ -28,39 +30,32 @@ const CELL: usize = 96;
 /// A cell counts as changed when more than this fraction of its pixels differ.
 /// High enough to shrug off a caret or sub-pixel antialiasing within the cell.
 const CELL_CHANGE_FRACTION: f64 = 0.05;
-/// A strip is re-read only when more than this many cells changed. Absorbs a
-/// couple of independent noise sources (a clock *and* a caret) in one strip.
+/// The screen is re-read only when more than this many cells changed. Absorbs a
+/// couple of independent noise sources (a clock *and* a caret).
 const NOISE_CELLS: usize = 2;
+/// Pixels added above and below a changed run, so a line of text that straddles
+/// the edge of the changed area is fully inside the re-read band.
+const BAND_MARGIN: i32 = 64;
 
-/// One horizontal strip's cached state.
-struct Strip {
-    y0: i32,
-    h: i32,
-    /// Whether `words`/baseline pixels have been populated by an OCR pass.
-    scanned: bool,
-    /// Words found in the strip last time it was read (absolute coordinates).
-    words: Vec<Word>,
-}
-
-/// A strip that changed enough to be re-read. `Copy` so worker threads can take
-/// it by value.
+/// A full-width horizontal band to OCR, in capture-local coordinates (the top of
+/// the captured region is `y = 0`).
 #[derive(Debug, Clone, Copy)]
-pub(super) struct DirtyStrip {
-    pub index: usize,
+pub(super) struct Band {
     pub y0: i32,
     pub h: i32,
 }
 
-/// Per-strip OCR cache for one screen size. Not thread-safe on its own.
+/// Incremental OCR cache for one screen size. Not thread-safe on its own.
 pub struct ScanCache {
     width: i32,
     height: i32,
     tiles: usize,
     overlap: i32,
-    strips: Vec<Strip>,
-    /// The whole-screen RGB at the last scan, the baseline strips diff against.
+    /// Whole-screen RGB at the last scan — the baseline bands diff against.
     prev: Vec<u8>,
     have_prev: bool,
+    /// All words currently believed on screen, in absolute coordinates.
+    words: Vec<Word>,
 }
 
 impl ScanCache {
@@ -70,25 +65,23 @@ impl ScanCache {
             height: 0,
             tiles: 0,
             overlap: 0,
-            strips: Vec::new(),
             prev: Vec::new(),
             have_prev: false,
+            words: Vec::new(),
         }
     }
 
-    /// Forget the baseline, forcing a full re-scan next time (e.g. after a config
+    /// Drop the baseline, forcing a full re-scan next time (e.g. after a config
     /// reload that changes OCR parameters).
     pub fn invalidate(&mut self) {
         self.have_prev = false;
     }
 
-    /// (Re)build the strip grid if the screen size, tile count or overlap changed.
     fn ensure_grid(&mut self, width: i32, height: i32, tiles: usize, overlap: i32) {
         if self.width == width
             && self.height == height
             && self.tiles == tiles
             && self.overlap == overlap
-            && !self.strips.is_empty()
         {
             return;
         }
@@ -96,72 +89,128 @@ impl ScanCache {
         self.height = height;
         self.tiles = tiles;
         self.overlap = overlap;
-        self.strips = super::plan_bands(height, tiles, overlap)
-            .into_iter()
-            .map(|(y0, h)| Strip {
-                y0,
-                h,
-                scanned: false,
-                words: Vec::new(),
-            })
-            .collect();
         self.have_prev = false;
+        self.words.clear();
     }
 
-    /// Compare every strip against the baseline and return those that changed by
-    /// more than [`CHANGE_FRACTION`]. The returned strips' pixels are folded into
-    /// the baseline immediately (they're about to be re-OCR'd), so noise that
-    /// stays below the threshold accumulates and is eventually caught.
-    pub(super) fn diff(
+    /// Decide which bands to OCR for the capture `rgb`, and adopt those regions
+    /// into the baseline (they're about to be re-read). Cold scans return the
+    /// whole screen as `tiles` overlapping bands; warm scans return tight bands
+    /// around what changed, or nothing if only noise moved.
+    pub(super) fn plan(
         &mut self,
         rgb: &[u8],
         width: i32,
         height: i32,
         tiles: usize,
         overlap: i32,
-    ) -> Vec<DirtyStrip> {
+    ) -> Vec<Band> {
         self.ensure_grid(width, height, tiles, overlap);
         if self.prev.len() != rgb.len() {
             self.prev = vec![0u8; rgb.len()];
             self.have_prev = false;
+            self.words.clear();
         }
 
-        let w = width.max(0) as usize;
-        let mut dirty = Vec::new();
-        for (index, s) in self.strips.iter().enumerate() {
-            let start = (s.y0.max(0) as usize * w * 3).min(rgb.len());
-            let end = ((s.y0 + s.h).max(0) as usize * w * 3).min(rgb.len());
-            let changed = !self.have_prev
-                || !s.scanned
-                || strip_changed(&rgb[start..end], &self.prev[start..end], w);
-            if changed {
-                dirty.push(DirtyStrip {
-                    index,
-                    y0: s.y0,
-                    h: s.h,
-                });
-                self.prev[start..end].copy_from_slice(&rgb[start..end]);
-            }
+        let bands: Vec<Band> = if self.have_prev {
+            // Only split a change band for parallelism when it is genuinely large
+            // (a full scroll), not for an ordinary localised edit.
+            let chunk = (height / tiles.max(1) as i32).max(CELL as i32 * 4);
+            self.changed_runs(rgb, width, height)
+                .into_iter()
+                .flat_map(|(y0, h)| split_band(y0, h, chunk, overlap))
+                .collect()
+        } else {
+            self.words.clear();
+            super::plan_bands(height, tiles, overlap)
+                .into_iter()
+                .map(|(y0, h)| Band { y0, h })
+                .collect()
+        };
+
+        // Adopt the planned regions into the baseline now that they'll be re-read.
+        let row = width.max(0) as usize * 3;
+        for b in &bands {
+            let start = (b.y0.max(0) as usize * row).min(self.prev.len());
+            let end = ((b.y0 + b.h).max(0) as usize * row).min(self.prev.len());
+            self.prev[start..end].copy_from_slice(&rgb[start..end]);
         }
         self.have_prev = true;
-        dirty
+        bands
     }
 
-    /// Commit a freshly OCR'd strip's words.
-    pub(super) fn store(&mut self, index: usize, words: Vec<Word>) {
-        if let Some(s) = self.strips.get_mut(index) {
-            s.words = words;
-            s.scanned = true;
-        }
+    /// Replace the words inside a re-read `band` with the freshly OCR'd ones,
+    /// keeping every word outside it. `origin_y` is the capture's screen-space top
+    /// (so band coordinates line up with the absolute word boxes).
+    pub(super) fn splice(&mut self, origin_y: i32, band: Band, new_words: Vec<Word>) {
+        let y0 = origin_y + band.y0;
+        let y1 = y0 + band.h;
+        self.words
+            .retain(|w| w.rect.center().y < y0 || w.rect.center().y >= y1);
+        self.words.extend(new_words);
     }
 
-    /// All cached words across every strip (clean and just-updated alike).
+    /// Every word currently cached.
     pub(super) fn all_words(&self) -> Vec<Word> {
-        let mut out = Vec::new();
-        for s in &self.strips {
-            out.extend(s.words.iter().cloned());
+        self.words.clone()
+    }
+
+    /// Changed cell-rows clustered into `(y0, height)` runs (capture-local),
+    /// padded by [`BAND_MARGIN`]. Empty if only noise (≤ [`NOISE_CELLS`]) moved.
+    fn changed_runs(&self, rgb: &[u8], width: i32, height: i32) -> Vec<(i32, i32)> {
+        if width <= 0 || height <= 0 {
+            return Vec::new();
         }
-        out
+        let w = width as usize;
+        let h = height as usize;
+        let cols = w.div_ceil(CELL);
+        let cell_rows = h.div_ceil(CELL);
+        let mut changed_px = vec![0u32; cols * cell_rows];
+        for y in 0..h {
+            let cell_row = (y / CELL) * cols;
+            let row = y * w * 3;
+            for x in 0..w {
+                let i = row + x * 3;
+                if rgb[i] != self.prev[i]
+                    || rgb[i + 1] != self.prev[i + 1]
+                    || rgb[i + 2] != self.prev[i + 2]
+                {
+                    changed_px[cell_row + x / CELL] += 1;
+                }
+            }
+        }
+
+        let cell_threshold = ((CELL * CELL) as f64 * CELL_CHANGE_FRACTION) as u32;
+        let mut row_changed = vec![false; cell_rows];
+        let mut total = 0usize;
+        for r in 0..cell_rows {
+            for c in 0..cols {
+                if changed_px[r * cols + c] > cell_threshold {
+                    row_changed[r] = true;
+                    total += 1;
+                }
+            }
+        }
+        if total <= NOISE_CELLS {
+            return Vec::new();
+        }
+
+        let mut runs = Vec::new();
+        let mut r = 0;
+        while r < cell_rows {
+            if !row_changed[r] {
+                r += 1;
+                continue;
+            }
+            let start = r;
+            while r < cell_rows && row_changed[r] {
+                r += 1;
+            }
+            let y0 = ((start * CELL) as i32 - BAND_MARGIN).max(0);
+            let y1 = ((r * CELL) as i32 + BAND_MARGIN).min(height);
+            runs.push((y0, y1 - y0));
+        }
+        runs
     }
 }
 
@@ -171,37 +220,36 @@ impl Default for ScanCache {
     }
 }
 
-/// True when more than [`NOISE_CELLS`] cells of the strip changed, where a cell
-/// changed means more than [`CELL_CHANGE_FRACTION`] of its pixels differ. `width`
-/// is the strip's pixel width (its height is inferred from the slice length).
-fn strip_changed(now: &[u8], base: &[u8], width: usize) -> bool {
-    if width == 0 {
-        return now != base;
+/// Split a band taller than `chunk` into overlapping pieces so a large change
+/// still OCRs in parallel rather than as one giant image.
+fn split_band(y0: i32, h: i32, chunk: i32, overlap: i32) -> Vec<Band> {
+    if h <= chunk {
+        return vec![Band { y0, h }];
     }
-    let row_bytes = width * 3;
-    let height = now.len() / row_bytes;
-    let cols = width.div_ceil(CELL);
-    let rows = height.div_ceil(CELL);
-    let mut changed_px = vec![0u32; cols * rows];
-    for y in 0..height {
-        let cell_row = (y / CELL) * cols;
-        let row = y * row_bytes;
-        for x in 0..width {
-            let i = row + x * 3;
-            if now[i] != base[i] || now[i + 1] != base[i + 1] || now[i + 2] != base[i + 2] {
-                changed_px[cell_row + x / CELL] += 1;
-            }
+    let n = (h + chunk - 1) / chunk;
+    let base = (h + n - 1) / n;
+    let mut bands = Vec::new();
+    for i in 0..n {
+        let s = (y0 + i * base - if i > 0 { overlap } else { 0 }).max(y0);
+        let e = (y0 + (i + 1) * base + overlap).min(y0 + h);
+        if s < e {
+            bands.push(Band { y0: s, h: e - s });
+        }
+        if y0 + (i + 1) * base >= y0 + h {
+            break;
         }
     }
-    let cell_threshold = ((CELL * CELL) as f64 * CELL_CHANGE_FRACTION) as u32;
-    let changed_cells = changed_px.iter().filter(|&&c| c > cell_threshold).count();
-    changed_cells > NOISE_CELLS
+    bands
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::geometry::Rect;
+
+    const W: i32 = 1000;
+    const H: i32 = 800;
+    const TILES: usize = 4;
 
     fn rgb(width: i32, height: i32) -> Vec<u8> {
         let (w, h) = (width as usize, height as usize);
@@ -212,82 +260,111 @@ mod tests {
         v
     }
 
-    fn scan(c: &mut ScanCache, buf: &[u8], w: i32, h: i32, tiles: usize, ov: i32) -> usize {
-        let dirty = c.diff(buf, w, h, tiles, ov);
-        for d in &dirty {
-            c.store(d.index, vec![Word::new(Rect::new(0, d.y0, 5, 5), "x")]);
+    /// Run a scan: plan the bands and fake an OCR result for each (one word per
+    /// band, tagged with its y), returning the bands planned.
+    fn scan(c: &mut ScanCache, buf: &[u8], w: i32, h: i32) -> Vec<Band> {
+        let bands = c.plan(buf, w, h, TILES, 20);
+        for &b in &bands {
+            c.splice(0, b, vec![Word::new(Rect::new(0, b.y0, 5, 5), "x")]);
         }
-        dirty.len()
+        bands
     }
 
-    const W: i32 = 1000;
-    const H: i32 = 400;
+    /// Rewrite rows `[y0, y1)` of `buf` so they read as genuinely changed.
+    fn rewrite_rows(buf: &mut [u8], w: i32, y0: usize, y1: usize) {
+        let row = w as usize * 3;
+        for b in &mut buf[y0 * row..y1 * row] {
+            *b = b.wrapping_add(97);
+        }
+    }
 
     #[test]
-    fn first_scan_marks_every_strip_dirty() {
+    fn cold_scan_covers_the_whole_screen_in_tiles() {
         let mut c = ScanCache::new();
-        assert_eq!(scan(&mut c, &rgb(W, H), W, H, 4, 20), 4);
+        assert_eq!(scan(&mut c, &rgb(W, H), W, H).len(), TILES);
     }
 
     #[test]
-    fn unchanged_screen_is_all_clean() {
+    fn unchanged_screen_reads_nothing() {
         let mut c = ScanCache::new();
         let buf = rgb(W, H);
-        scan(&mut c, &buf, W, H, 4, 20);
-        assert_eq!(scan(&mut c, &buf, W, H, 4, 20), 0, "nothing changed");
-        assert_eq!(c.all_words().len(), 4, "cached words are kept");
+        scan(&mut c, &buf, W, H);
+        assert!(scan(&mut c, &buf, W, H).is_empty());
     }
 
     #[test]
     fn tiny_localised_change_is_ignored() {
         let mut c = ScanCache::new();
         let buf = rgb(W, H);
-        scan(&mut c, &buf, W, H, 4, 0);
-        // Flip a caret-sized blob and a clock-sized blob in strip 1 (rows
-        // 100..200): two small cells, which must read as noise.
+        scan(&mut c, &buf, W, H);
         let mut tweaked = buf.clone();
-        let row_bytes = W as usize * 3;
+        let row = W as usize * 3;
         for dx in 0..3 {
-            // ~3px "caret" near the left
-            tweaked[110 * row_bytes + dx * 3] ^= 0xff;
+            tweaked[300 * row + dx * 3] ^= 0xff; // a "caret"
         }
-        for y in 120..150 {
+        for y in 600..630 {
             for x in 500..520 {
-                // ~20x30px "clock digit" mid-strip
-                tweaked[y * row_bytes + x * 3] ^= 0xff;
+                tweaked[y * row + x * 3] ^= 0xff; // a "clock digit"
             }
         }
-        assert_eq!(
-            scan(&mut c, &tweaked, W, H, 4, 0),
-            0,
-            "a caret and a clock digit must not dirty the strip"
-        );
+        assert!(scan(&mut c, &tweaked, W, H).is_empty());
     }
 
     #[test]
-    fn real_change_dirties_only_its_strip() {
+    fn a_real_change_reads_only_a_tight_band() {
         let mut c = ScanCache::new();
         let buf = rgb(W, H);
-        scan(&mut c, &buf, W, H, 4, 0);
-        // Rewrite all of strip 1's rows (a scroll / new content).
+        scan(&mut c, &buf, W, H);
+        // Rewrite rows 400..480 (a chat message appearing).
         let mut tweaked = buf.clone();
-        let row_bytes = W as usize * 3;
-        for b in &mut tweaked[100 * row_bytes..200 * row_bytes] {
-            *b = b.wrapping_add(123);
-        }
-        let dirty = c.diff(&tweaked, W, H, 4, 0);
-        assert_eq!(dirty.len(), 1);
-        assert_eq!(dirty[0].index, 1);
+        rewrite_rows(&mut tweaked, W, 400, 480);
+        let bands = c.plan(&tweaked, W, H, TILES, 20);
+        assert_eq!(bands.len(), 1, "one contiguous change -> one band");
+        // The band is tight: it covers the change plus margin, not the whole screen.
+        assert!(bands[0].y0 <= 400 && bands[0].y0 >= 400 - CELL as i32 - BAND_MARGIN);
+        assert!(bands[0].h < H / 2, "band much smaller than the screen");
     }
 
     #[test]
-    fn resizing_rebuilds_the_grid() {
+    fn two_far_apart_changes_are_two_bands() {
         let mut c = ScanCache::new();
-        scan(&mut c, &rgb(W, H), W, H, 4, 20);
-        assert_eq!(
-            scan(&mut c, &rgb(1200, 600), 1200, 600, 4, 20),
-            4,
-            "new size starts cold"
-        );
+        let buf = rgb(W, H);
+        scan(&mut c, &buf, W, H);
+        let mut tweaked = buf.clone();
+        rewrite_rows(&mut tweaked, W, 100, 140);
+        rewrite_rows(&mut tweaked, W, 600, 640);
+        let bands = c.plan(&tweaked, W, H, TILES, 20);
+        assert_eq!(bands.len(), 2);
+    }
+
+    #[test]
+    fn splice_keeps_words_outside_the_band() {
+        let mut c = ScanCache::new();
+        let buf = rgb(W, H);
+        // Seed with words at known rows across the screen.
+        c.plan(&buf, W, H, TILES, 20);
+        c.words = vec![
+            Word::new(Rect::new(0, 50, 5, 5), "top"),
+            Word::new(Rect::new(0, 430, 5, 5), "middle"),
+            Word::new(Rect::new(0, 700, 5, 5), "bottom"),
+        ];
+        // A change at rows 400..460 replaces only "middle".
+        let mut tweaked = buf.clone();
+        rewrite_rows(&mut tweaked, W, 400, 460);
+        let bands = c.plan(&tweaked, W, H, TILES, 20);
+        for &b in &bands {
+            c.splice(0, b, vec![Word::new(Rect::new(0, 430, 5, 5), "new")]);
+        }
+        let words = c.all_words();
+        let texts: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
+        assert!(texts.contains(&"top") && texts.contains(&"bottom"));
+        assert!(texts.contains(&"new") && !texts.contains(&"middle"));
+    }
+
+    #[test]
+    fn resize_forces_a_cold_scan() {
+        let mut c = ScanCache::new();
+        scan(&mut c, &rgb(W, H), W, H);
+        assert_eq!(scan(&mut c, &rgb(1200, 600), 1200, 600).len(), TILES);
     }
 }
