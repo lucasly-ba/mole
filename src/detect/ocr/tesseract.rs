@@ -15,6 +15,7 @@ use crate::error::{Error, Result};
 
 /// A configured handle to the OCR binary. Cheap to clone/rebuild on config
 /// reload; holds no process or connection between runs.
+#[derive(Clone)]
 pub struct Tesseract {
     binary: String,
     language: String,
@@ -25,21 +26,30 @@ impl Tesseract {
         Tesseract { binary, language }
     }
 
-    /// Read `screen` and return Tesseract's raw TSV output.
+    /// Read the whole `screen` and return Tesseract's raw TSV output.
     pub fn read(&self, screen: &Screen) -> Result<String> {
         let ppm = encode_ppm(screen);
-        self.run(ppm)
+        self.run(ppm, 0)
     }
 
     /// Run the OCR binary, feeding `ppm` on stdin and returning the TSV stdout.
-    fn run(&self, ppm: Vec<u8>) -> Result<String> {
+    ///
+    /// `threads` caps Tesseract's internal OpenMP threads via `OMP_THREAD_LIMIT`
+    /// (`0` leaves it to Tesseract). When several instances run in parallel
+    /// (tiled OCR), capping each one keeps them from oversubscribing the cores
+    /// and fighting each other.
+    pub fn run(&self, ppm: Vec<u8>, threads: usize) -> Result<String> {
         // `--psm 11` is "sparse text": find as much text as possible anywhere on
         // the image, which is what we want for a whole, busy desktop.
-        let mut child = Command::new(&self.binary)
-            .args(["-", "-", "-l", &self.language, "--psm", "11", "tsv"])
+        let mut cmd = Command::new(&self.binary);
+        cmd.args(["-", "-", "-l", &self.language, "--psm", "11", "tsv"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        if threads > 0 {
+            cmd.env("OMP_THREAD_LIMIT", threads.to_string());
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| Error::Ocr(format!("failed to spawn {}: {e}", self.binary)))?;
 
@@ -78,5 +88,19 @@ fn encode_ppm(screen: &Screen) -> Vec<u8> {
     let mut out = Vec::with_capacity(16 + body.len());
     out.extend_from_slice(format!("P6\n{w} {h}\n255\n").as_bytes());
     out.extend_from_slice(&body);
+    out
+}
+
+/// Encode rows `[y0, y0 + height)` of a tight, full-width RGB buffer as a PPM —
+/// one horizontal strip of the screen for tiled OCR. `rgb` is the whole-screen
+/// buffer from [`Screen::to_rgb`], reused across strips so it is built only once.
+pub fn encode_ppm_band(rgb: &[u8], width: i32, y0: i32, height: i32) -> Vec<u8> {
+    let w = width.max(0) as usize;
+    let start = (y0.max(0) as usize * w * 3).min(rgb.len());
+    let end = ((y0 + height).max(0) as usize * w * 3).min(rgb.len());
+    let body = &rgb[start..end];
+    let mut out = Vec::with_capacity(16 + body.len());
+    out.extend_from_slice(format!("P6\n{width} {height}\n255\n").as_bytes());
+    out.extend_from_slice(body);
     out
 }

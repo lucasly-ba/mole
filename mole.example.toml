@@ -60,6 +60,11 @@ max_word_gap = 1.0
 # How strict "same line" is: two words share a line when their vertical centres
 # differ by at most this fraction of their text height.
 line_tolerance = 0.5
+# How many horizontal strips to split the screen into and OCR in parallel.
+# Tesseract is single-threaded per image, so on a multi-core machine this is the
+# biggest speed lever — 4 roughly halves scan time on a wide display. Set to 1
+# to disable tiling (a single pass over the whole screen).
+tiles = 4
 
 [daemon]
 # Unix socket the daemon listens on. The CLI talks to it over this socket.
