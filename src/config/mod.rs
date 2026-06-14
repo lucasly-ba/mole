@@ -88,6 +88,10 @@ pub struct Hints {
     pub font_family: String,
     pub font_size: f64,
     pub min_gap: i32,
+    /// How much to darken the frozen screenshot painted behind the hints
+    /// (`0.0` = the screen as-is, `1.0` = black). A little dim makes the hint
+    /// boxes stand out while the desktop stays clearly visible.
+    pub dim: f64,
 }
 
 /// OCR backend tuning. These are the "sensitivity" knobs for how aggressively
@@ -155,6 +159,7 @@ impl Default for Hints {
             font_family: "monospace".to_string(),
             font_size: 13.0,
             min_gap: 4,
+            dim: 0.2,
         }
     }
 }
@@ -235,6 +240,11 @@ impl Config {
         }
         if self.hints.font_size <= 0.0 {
             return Err(Error::Config("hints.font_size must be positive".into()));
+        }
+        if !(0.0..=1.0).contains(&self.hints.dim) {
+            return Err(Error::Config(
+                "hints.dim must be between 0.0 and 1.0".into(),
+            ));
         }
         if self.ocr.min_element_size < 0 {
             return Err(Error::Config(

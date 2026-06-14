@@ -55,8 +55,10 @@ visible.
 - An **X11** session (any window manager — i3, bspwm, GNOME-on-Xorg, …).
 - The **`tesseract`** OCR binary on your `PATH` (this is how mole reads the
   screen — it is required, not optional).
-- A **compositor** for see-through hints (picom, compton, or a compositing WM).
-  Without one the overlay still works, it just isn't transparent.
+- **No compositor required.** The overlay paints a frozen snapshot of your
+  desktop behind the hints, so you always see where you're aiming. A running
+  compositor (picom, compton, a compositing WM) additionally lets the *live*
+  desktop show through, but is optional.
 - To build: a **Rust toolchain** and the **cairo** development library.
 
 ## Install

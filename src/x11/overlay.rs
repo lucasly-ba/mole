@@ -2,9 +2,12 @@
 //!
 //! Creates a 32-bit ARGB, borderless, override-redirect window the size of the
 //! root. Override-redirect keeps the window manager's hands off it (no frame, no
-//! tiling), and the alpha channel lets a running compositor show the desktop
-//! through the gaps between hint boxes. While shown, the overlay grabs the
-//! keyboard so every keystroke goes to hint selection instead of the app below.
+//! tiling). Rather than rely on an X compositor to blend transparent pixels (no
+//! compositor → a black screen with floating labels), the renderer paints a
+//! frozen snapshot of the desktop as the backdrop, so the overlay is usable
+//! everywhere; the alpha channel still lets a compositor show the live desktop
+//! through if one is running. While shown, the overlay grabs the keyboard so
+//! every keystroke goes to hint selection instead of the app below.
 //!
 //! Rendering is decoupled: callers draw into a buffer (see [`crate::render`]) and
 //! hand it to [`Overlay::present`], which uploads it with `PutImage`.
