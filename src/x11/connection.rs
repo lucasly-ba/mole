@@ -8,40 +8,11 @@
 use std::collections::HashMap;
 
 use x11rb::connection::Connection as _;
-use x11rb::protocol::xproto::{ConnectionExt as _, ModMask};
+use x11rb::protocol::xproto::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 
 use crate::error::{Error, Result};
 use crate::geometry::Rect;
-
-/// Modifier masks we care about, resolved to X11 bit masks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Modifiers(pub u16);
-
-impl Modifiers {
-    pub const NONE: Modifiers = Modifiers(0);
-
-    /// Parse a config string like `"shift"`, `"super"`, `"ctrl+shift"`.
-    pub fn parse(s: &str) -> Result<Modifiers> {
-        let mut mask = 0u16;
-        for part in s.split('+').map(str::trim).filter(|p| !p.is_empty()) {
-            mask |= match part.to_ascii_lowercase().as_str() {
-                "shift" => u16::from(ModMask::SHIFT),
-                "ctrl" | "control" => u16::from(ModMask::CONTROL),
-                "alt" | "mod1" => u16::from(ModMask::M1),
-                "super" | "mod4" | "win" | "cmd" => u16::from(ModMask::M4),
-                other => {
-                    return Err(Error::Config(format!("unknown modifier {other:?}")));
-                }
-            };
-        }
-        Ok(Modifiers(mask))
-    }
-
-    pub fn bits(&self) -> u16 {
-        self.0
-    }
-}
 
 /// A decoded key event, abstracted away from raw keycodes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,26 +157,6 @@ fn load_mapping(conn: &RustConnection) -> Result<Mapping> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x11rb::protocol::xproto::ModMask;
-
-    #[test]
-    fn parses_combined_modifiers() {
-        let m = Modifiers::parse("ctrl+shift").unwrap();
-        assert_eq!(
-            m.bits(),
-            u16::from(ModMask::CONTROL) | u16::from(ModMask::SHIFT)
-        );
-    }
-
-    #[test]
-    fn empty_string_is_no_modifier() {
-        assert_eq!(Modifiers::parse("").unwrap(), Modifiers::NONE);
-    }
-
-    #[test]
-    fn unknown_modifier_errors() {
-        assert!(Modifiers::parse("hyperturbo").is_err());
-    }
 
     #[test]
     fn ascii_keysym_is_codepoint() {

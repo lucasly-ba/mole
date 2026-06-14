@@ -34,7 +34,7 @@ Flakes only see git-tracked files: **`git add` new files before `nix develop` /
 Pipeline: capture → detect → label → render → match → act, wrapped in a daemon.
 
 - `geometry.rs`, `config/` — primitives + TOML config (hot-reloaded). Display-free.
-- `capture.rs`, `x11/{connection,hotkey,pointer,overlay}.rs` — all X-specific code.
+- `capture.rs`, `x11/{connection,pointer,overlay}.rs` — all X-specific code.
 - `detect/mod.rs` (Detector trait + finalize) + `detect/ocr/{mod,tesseract,tsv,phrase}.rs`
   — OCR reading + word→phrase grouping (phrase.rs is the core, heavily tested).
 - `motion.rs` — accelerating step sizing for hjkl free-move (tested).

@@ -59,7 +59,6 @@ src/
 │   └── watch.rs       hot reload via `notify`
 ├── x11/
 │   ├── connection.rs  the connection + keysym/keycode maps (tested)
-│   ├── hotkey.rs      global hotkeys (XGrabKey)
 │   ├── pointer.rs     warp + XTest clicks/drag
 │   └── overlay.rs     the transparent ARGB overlay window
 ├── detect/
@@ -94,10 +93,11 @@ the systems modules together; `daemon` drives `session`.
 - **§1.1 Capture** → `capture.rs`. X11 `GetImage` into a `Screen` that also knows
   how to read a pixel and average a region (for contrast later). The plan's
   "only capture needed zones" is `Screen::capture_region`, used by `capture_full`.
-- **§1.2 Global hotkey** → `x11/hotkey.rs`. `XGrabKey` with the Caps/Num-Lock
-  variants registered so the grab survives those modifiers. Clean event loop in
-  `HotkeyManager::wait`. *Note:* in practice most users trigger via the socket
-  from their WM (`exec mole click`), so this is the standalone path.
+- **§1.2 Triggering.** The plan called for a global hotkey (`XGrabKey`). In
+  practice every trigger comes from the WM binding a key to `exec mole <cmd>`,
+  which reaches the daemon over its Unix socket — so the WM already owns the
+  hotkey and mole needs no grab of its own. An early `XGrabKey` implementation
+  existed but was removed as dead weight once socket triggering proved sufficient.
 - **§1.3 hjkl movement** → `x11/pointer.rs` + `session::run_free_move`, with the
   step sizing factored into `motion.rs`. Relative warps, configurable keys,
   normal/large step (Shift → uppercase keysym), and optional hold-to-accelerate:
