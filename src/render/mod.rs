@@ -22,6 +22,17 @@ pub struct Frame {
     pub height: i32,
 }
 
+/// The opaque desktop snapshot painted behind the hints, built once per
+/// interaction and reused for every repaint. Constructing it is the expensive
+/// part of a frame (a per-pixel pass over the whole screen), so caching it keeps
+/// each keystroke's redraw to a cheap blit-plus-labels and shrinks the gap
+/// between mapping the overlay and the first paint.
+pub struct Backdrop {
+    surface: ImageSurface,
+    width: i32,
+    height: i32,
+}
+
 /// Renders hint overlays.
 pub struct Renderer {
     style: Hints,
@@ -32,32 +43,42 @@ impl Renderer {
         Renderer { style }
     }
 
-    /// Render the hints that are still consistent with `typed`.
+    /// Build the opaque desktop backdrop from `screen`. Do this once per
+    /// interaction; pass the result to [`Renderer::render_onto`] for each frame.
     ///
-    /// `screen` is the captured frame behind the overlay, used to keep boxes
-    /// readable over whatever they cover. Boxes whose label does not start with
-    /// `typed` are skipped, which is the visual side of progressive matching.
-    pub fn render(
+    /// Painting the captured screen as an opaque backdrop is what lets the
+    /// overlay work with no compositor: leaving it transparent only shows the
+    /// desktop when a compositor is running to blend the alpha, otherwise the
+    /// user gets a black screen with floating labels and no sense of where a jump
+    /// lands. Our own snapshot shows them exactly what they're aiming at.
+    pub fn backdrop(&self, width: i32, height: i32, screen: &Screen) -> Result<Backdrop> {
+        Ok(Backdrop {
+            surface: screen_backdrop(width, height, screen, self.style.dim)?,
+            width,
+            height,
+        })
+    }
+
+    /// Render the hints that are still consistent with `typed` over a prebuilt
+    /// `backdrop`. Boxes whose label does not start with `typed` are skipped,
+    /// which is the visual side of progressive matching. `screen` is read for the
+    /// adaptive box contrast.
+    pub fn render_onto(
         &self,
-        width: i32,
-        height: i32,
+        backdrop: &Backdrop,
         boxes: &[HintBox],
         typed: &str,
         screen: &Screen,
     ) -> Result<Frame> {
+        let width = backdrop.width;
+        let height = backdrop.height;
         let mut surface =
             ImageSurface::create(Format::ARgb32, width, height).map_err(Error::render)?;
         {
             let ctx = Context::new(&surface).map_err(Error::render)?;
 
-            // Paint the captured screen as an opaque backdrop. The alternative —
-            // leaving the overlay transparent — only shows the desktop if an X
-            // compositor is running to blend the alpha; with none, the user just
-            // sees a black screen with floating labels and can't tell where a
-            // jump lands. Painting our own snapshot makes the overlay work
-            // everywhere and shows the user exactly what they're aiming at.
-            let backdrop = screen_backdrop(width, height, screen, self.style.dim)?;
-            ctx.set_source_surface(&backdrop, 0.0, 0.0)
+            // Blit the cached snapshot, then draw the labels on top.
+            ctx.set_source_surface(&backdrop.surface, 0.0, 0.0)
                 .map_err(Error::render)?;
             ctx.set_operator(Operator::Source);
             ctx.paint().map_err(Error::render)?;
@@ -87,6 +108,20 @@ impl Renderer {
             width,
             height,
         })
+    }
+
+    /// Convenience: build the backdrop and render `boxes` over it in one call.
+    /// Used by tests; the daemon caches the backdrop across repaints instead.
+    pub fn render(
+        &self,
+        width: i32,
+        height: i32,
+        boxes: &[HintBox],
+        typed: &str,
+        screen: &Screen,
+    ) -> Result<Frame> {
+        let backdrop = self.backdrop(width, height, screen)?;
+        self.render_onto(&backdrop, boxes, typed, screen)
     }
 
     fn draw_box(&self, ctx: &Context, b: &HintBox, typed: &str, screen: &Screen) -> Result<()> {
