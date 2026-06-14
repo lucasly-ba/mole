@@ -94,12 +94,14 @@ fn detect_to_target_roundtrip() {
     assert_eq!(boxes.len(), 3, "one box per detected element");
 
     // Type the second box's label and confirm the matcher selects exactly it,
-    // and that its target is the *element centre*, not the label box corner.
+    // and that its target is the *start of the element's text* (left edge nudged
+    // in, vertically centred), not the label box corner or the phrase centre.
     let target_box = &boxes[1];
     match type_label(&boxes, &target_box.label) {
         MatchState::Selected(idx) => {
             assert_eq!(idx, 1);
-            assert_eq!(boxes[idx].target, Point::new(330, 215));
+            // elem(300, 200, 60, 30): inset = min(15, 30) = 15.
+            assert_eq!(boxes[idx].target, Point::new(315, 215));
         }
         other => panic!("expected Selected(1), got {other:?}"),
     }
@@ -109,14 +111,15 @@ fn detect_to_target_roundtrip() {
 fn every_element_is_reachable_by_typing_its_label() {
     // Enough elements (>alphabet length) to force multi-character labels, laid
     // out on a grid. Whatever the layout does to the *boxes*, every *target*
-    // must stay typeable and map back to the right element centre.
+    // must stay typeable and map back to the right element's text start.
     let mut elements = Vec::new();
-    let mut expected_centers = Vec::new();
+    let mut expected_targets = Vec::new();
     for row in 0..6 {
         for col in 0..5 {
             let (x, y) = (40 + col * 140, 40 + row * 90);
             elements.push(elem(x, y, 50, 24));
-            expected_centers.push(Rect::new(x, y, 50, 24).center());
+            // text_start: left edge + min(h/2, w/2) in, vertically centred.
+            expected_targets.push(Point::new(x + 12, y + 12));
         }
     }
     let detector = FakeDetector { elements };
@@ -139,8 +142,8 @@ fn every_element_is_reachable_by_typing_its_label() {
             b.label
         );
         assert_eq!(
-            b.target, expected_centers[idx],
-            "box {idx} points at the wrong element centre"
+            b.target, expected_targets[idx],
+            "box {idx} points at the wrong text start"
         );
     }
 }
