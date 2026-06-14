@@ -159,6 +159,24 @@ The same idea works in any WM: bind a key to `exec mole <command>`. Only a
 hint command runs OCR; the daemon does nothing (and never scans) until you press
 one.
 
+### Running the daemon under systemd
+
+`mole daemon` runs in the foreground, so for a background service that starts
+with your session and restarts on failure, a systemd **user** unit is provided
+in [`contrib/mole.service`](contrib/mole.service):
+
+```sh
+cp contrib/mole.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now mole.service
+```
+
+The daemon needs `DISPLAY`/`XAUTHORITY` to reach X. A display manager usually
+exports these into the systemd user environment for you; under a bare WM like i3
+either uncomment the `Environment=` lines in the unit or run
+`systemctl --user import-environment DISPLAY XAUTHORITY` from your WM autostart.
+See the comments in the unit file for details.
+
 ## Configuration
 
 mole reads `~/.config/mole/config.toml` (override with `--config`) and
