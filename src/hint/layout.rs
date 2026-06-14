@@ -66,8 +66,16 @@ pub fn place_hints(
 
         let mut chosen: Option<Rect> = None;
         for &(dx, dy) in OFFSETS {
-            let cand = Rect::new(base.x + dx * (w + min_gap), base.y + dy * (h + min_gap), w, h);
-            let Some(cand) = cand.clamp_to(screen).filter(|c| c.width == w && c.height == h) else {
+            let cand = Rect::new(
+                base.x + dx * (w + min_gap),
+                base.y + dy * (h + min_gap),
+                w,
+                h,
+            );
+            let Some(cand) = cand
+                .clamp_to(screen)
+                .filter(|c| c.width == w && c.height == h)
+            else {
                 continue; // partly off-screen at this offset
             };
             let collides = placed
@@ -127,11 +135,18 @@ mod tests {
     #[test]
     fn colliding_anchors_are_separated() {
         // Three elements stacked on the exact same spot.
-        let els = [elem(50, 50, 10, 10), elem(50, 50, 10, 10), elem(50, 50, 10, 10)];
+        let els = [
+            elem(50, 50, 10, 10),
+            elem(50, 50, 10, 10),
+            elem(50, 50, 10, 10),
+        ];
         let labels = vec!["aa".into(), "ab".into(), "ac".into()];
         let boxes = place_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 1920, 1080));
         assert_eq!(boxes.len(), 3);
-        assert!(no_overlaps(&boxes, 4), "boxes should not overlap after layout");
+        assert!(
+            no_overlaps(&boxes, 4),
+            "boxes should not overlap after layout"
+        );
     }
 
     #[test]

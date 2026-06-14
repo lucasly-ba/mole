@@ -62,9 +62,7 @@ pub fn from_config(config: &Config) -> Box<dyn Detector> {
 /// [`Detector`] shares one notion of "clean, ordered targets".
 pub fn finalize(mut elements: Vec<Element>, min_size: i32, screen: Rect) -> Vec<Element> {
     elements.retain(|e| {
-        e.rect.width >= min_size
-            && e.rect.height >= min_size
-            && e.rect.clamp_to(screen).is_some()
+        e.rect.width >= min_size && e.rect.height >= min_size && e.rect.clamp_to(screen).is_some()
     });
     // Reading order: top-to-bottom, then left-to-right.
     elements.sort_by_key(|e| (e.rect.center().y, e.rect.center().x));

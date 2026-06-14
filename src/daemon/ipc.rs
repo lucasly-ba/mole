@@ -144,6 +144,9 @@ mod tests {
 
     #[test]
     fn hint_alias_maps_to_teleport() {
-        assert_eq!(Command::parse("hint").unwrap(), Command::Hint(Mode::Teleport));
+        assert_eq!(
+            Command::parse("hint").unwrap(),
+            Command::Hint(Mode::Teleport)
+        );
     }
 }

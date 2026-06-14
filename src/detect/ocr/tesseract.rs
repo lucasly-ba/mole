@@ -60,7 +60,10 @@ impl Tesseract {
         let _ = writer.join();
 
         if !output.status.success() {
-            return Err(Error::Ocr(format!("tesseract exited with {}", output.status)));
+            return Err(Error::Ocr(format!(
+                "tesseract exited with {}",
+                output.status
+            )));
         }
         String::from_utf8(output.stdout)
             .map_err(|e| Error::Ocr(format!("tesseract produced non-UTF8 TSV: {e}")))

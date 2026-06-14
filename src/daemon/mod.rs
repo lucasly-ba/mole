@@ -74,9 +74,8 @@ impl Daemon {
                 )));
             }
         }
-        UnixListener::bind(&self.socket_path).map_err(|e| {
-            Error::Ipc(format!("could not bind {:?}: {e}", self.socket_path))
-        })
+        UnixListener::bind(&self.socket_path)
+            .map_err(|e| Error::Ipc(format!("could not bind {:?}: {e}", self.socket_path)))
     }
 
     /// Watch the config file and swap the shared config on change.

@@ -176,7 +176,12 @@ mod tests {
             px[2] = r;
             px[3] = 255;
         }
-        Screen::from_raw(Rect::new(0, 0, width, height), data, (width * 4) as usize, 4)
+        Screen::from_raw(
+            Rect::new(0, 0, width, height),
+            data,
+            (width * 4) as usize,
+            4,
+        )
     }
 
     #[test]
@@ -194,7 +199,10 @@ mod tests {
     #[test]
     fn average_of_solid_is_that_color() {
         let s = solid(16, 16, 0, 128, 255); // B=0 G=128 R=255
-        assert_eq!(s.average_color(Rect::new(0, 0, 16, 16)), Rgba::new(255, 128, 0, 255));
+        assert_eq!(
+            s.average_color(Rect::new(0, 0, 16, 16)),
+            Rgba::new(255, 128, 0, 255)
+        );
     }
 
     #[test]

@@ -29,8 +29,8 @@ pub struct Hotkey {
 /// The lock-modifier bits we must ignore: Caps Lock and Num Lock (Mod2).
 const IGNORED_LOCKS: &[u16] = &[
     0,
-    0x02,       // Lock (Caps)
-    0x10,       // Mod2 (Num)
+    0x02,        // Lock (Caps)
+    0x10,        // Mod2 (Num)
     0x02 | 0x10, // both
 ];
 

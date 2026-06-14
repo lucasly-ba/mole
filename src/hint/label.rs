@@ -21,7 +21,10 @@
 /// remain to label every target. Because a string is only ever used *or*
 /// expanded (never both), the result is prefix-free by construction.
 pub fn generate_labels(alphabet: &[char], count: usize) -> Vec<String> {
-    assert!(alphabet.len() >= 2, "alphabet needs at least two characters");
+    assert!(
+        alphabet.len() >= 2,
+        "alphabet needs at least two characters"
+    );
     if count == 0 {
         return Vec::new();
     }
@@ -41,11 +44,7 @@ pub fn generate_labels(alphabet: &[char], count: usize) -> Vec<String> {
         }
     }
 
-    frontier
-        .into_iter()
-        .skip(expand_at)
-        .take(count)
-        .collect()
+    frontier.into_iter().skip(expand_at).take(count).collect()
 }
 
 /// The result of feeding one keystroke to a [`HintMatcher`].
@@ -114,10 +113,7 @@ impl HintMatcher {
         self.typed = candidate;
 
         // Prefix-freedom guarantees that an exact equality is unique.
-        if let Some(&idx) = still_match
-            .iter()
-            .find(|&&i| self.labels[i] == self.typed)
-        {
+        if let Some(&idx) = still_match.iter().find(|&&i| self.labels[i] == self.typed) {
             MatchState::Selected(idx)
         } else {
             MatchState::Pending

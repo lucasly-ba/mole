@@ -37,7 +37,12 @@ impl Detector for FakeDetector {
 /// A blank off-screen-free capture to satisfy the [`Detector`] signature and the
 /// layout's screen bounds. Contents don't matter here — nothing samples pixels.
 fn blank_screen(w: i32, h: i32) -> Screen {
-    Screen::from_raw(Rect::new(0, 0, w, h), vec![0u8; (w * h * 4) as usize], (w * 4) as usize, 4)
+    Screen::from_raw(
+        Rect::new(0, 0, w, h),
+        vec![0u8; (w * h * 4) as usize],
+        (w * 4) as usize,
+        4,
+    )
 }
 
 fn alphabet() -> Vec<char> {
@@ -48,7 +53,13 @@ fn alphabet() -> Vec<char> {
 fn run_layout(detector: &FakeDetector, screen: &Screen) -> Result<Vec<HintBox>> {
     let elements = detector.detect(screen)?;
     let labels = generate_labels(&alphabet(), elements.len());
-    Ok(place_hints(&elements, &labels, FONT_SIZE, MIN_GAP, screen.bounds()))
+    Ok(place_hints(
+        &elements,
+        &labels,
+        FONT_SIZE,
+        MIN_GAP,
+        screen.bounds(),
+    ))
 }
 
 /// Drive the matcher with a full label string from a fresh state, like a user
@@ -140,7 +151,11 @@ fn stacked_elements_stay_individually_selectable() {
     // pass reports at the same origin). Layout must separate the boxes, and each
     // must remain reachable with its own keys.
     let detector = FakeDetector {
-        elements: vec![elem(100, 100, 30, 16), elem(100, 100, 30, 16), elem(100, 100, 30, 16)],
+        elements: vec![
+            elem(100, 100, 30, 16),
+            elem(100, 100, 30, 16),
+            elem(100, 100, 30, 16),
+        ],
     };
     let screen = blank_screen(800, 600);
     let boxes = run_layout(&detector, &screen).unwrap();

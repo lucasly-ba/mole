@@ -74,7 +74,11 @@ mod tests {
     fn first_press_is_the_base_step() {
         let mut a = Accelerator::new(24, 160, 1.5, 600);
         assert_eq!(a.next(Dir::Right, false), (24, 0));
-        assert_eq!(a.next(Dir::Up, true), (0, -160), "Shift uses the large step");
+        assert_eq!(
+            a.next(Dir::Up, true),
+            (0, -160),
+            "Shift uses the large step"
+        );
     }
 
     #[test]
@@ -90,7 +94,11 @@ mod tests {
         let mut a = Accelerator::new(10, 100, 2.0, 10_000);
         a.next(Dir::Right, false);
         a.next(Dir::Right, false); // now accelerated
-        assert_eq!(a.next(Dir::Left, false), (-10, 0), "new direction starts at base");
+        assert_eq!(
+            a.next(Dir::Left, false),
+            (-10, 0),
+            "new direction starts at base"
+        );
     }
 
     #[test]

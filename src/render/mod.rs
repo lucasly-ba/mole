@@ -55,11 +55,7 @@ impl Renderer {
             ctx.paint().map_err(Error::render)?;
             ctx.set_operator(Operator::Over);
 
-            ctx.select_font_face(
-                &self.style.font_family,
-                FontSlant::Normal,
-                FontWeight::Bold,
-            );
+            ctx.select_font_face(&self.style.font_family, FontSlant::Normal, FontWeight::Bold);
             ctx.set_font_size(self.style.font_size);
 
             for b in boxes {
@@ -102,7 +98,14 @@ impl Renderer {
         // Box fill.
         let (br, bgc, bb, ba) = bg.as_f64();
         ctx.set_source_rgba(br, bgc, bb, ba);
-        rounded_rect(ctx, r.x as f64, r.y as f64, r.width as f64, r.height as f64, 3.0);
+        rounded_rect(
+            ctx,
+            r.x as f64,
+            r.y as f64,
+            r.width as f64,
+            r.height as f64,
+            3.0,
+        );
         ctx.fill().map_err(Error::render)?;
 
         // Centred label.
@@ -137,7 +140,12 @@ mod tests {
     use crate::geometry::{Point, Rect};
 
     fn blank_screen() -> Screen {
-        Screen::from_raw(Rect::new(0, 0, 100, 100), vec![0u8; 100 * 100 * 4], 100 * 4, 4)
+        Screen::from_raw(
+            Rect::new(0, 0, 100, 100),
+            vec![0u8; 100 * 100 * 4],
+            100 * 4,
+            4,
+        )
     }
 
     fn hint(label: &str) -> HintBox {

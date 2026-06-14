@@ -149,10 +149,7 @@ mod tests {
     #[test]
     fn a_wide_gap_splits_into_separate_phrases() {
         // Two columns far apart on the same line: a menu bar entry and a clock.
-        let words = vec![
-            word(10, 20, 40, 16, "File"),
-            word(900, 20, 60, 16, "12:00"),
-        ];
+        let words = vec![word(10, 20, 40, 16, "File"), word(900, 20, 60, 16, "12:00")];
         let out = group(words, grouping());
         assert_eq!(out.len(), 2, "the column gap breaks the phrase");
         assert_eq!(out[0].text, "File");

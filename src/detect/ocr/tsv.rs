@@ -25,7 +25,15 @@ pub fn parse(tsv: &str, region: Rect, min_confidence: f32) -> Vec<Word> {
     let cols: Vec<&str> = header.split('\t').collect();
     let idx = |name: &str| cols.iter().position(|c| *c == name);
 
-    let (Some(i_level), Some(i_left), Some(i_top), Some(i_w), Some(i_h), Some(i_conf), Some(i_text)) = (
+    let (
+        Some(i_level),
+        Some(i_left),
+        Some(i_top),
+        Some(i_w),
+        Some(i_h),
+        Some(i_conf),
+        Some(i_text),
+    ) = (
         idx("level"),
         idx("left"),
         idx("top"),
@@ -33,7 +41,8 @@ pub fn parse(tsv: &str, region: Rect, min_confidence: f32) -> Vec<Word> {
         idx("height"),
         idx("conf"),
         idx("text"),
-    ) else {
+    )
+    else {
         log::warn!("unexpected tesseract TSV header: {header:?}");
         return words;
     };

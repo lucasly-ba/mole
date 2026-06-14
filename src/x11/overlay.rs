@@ -128,7 +128,10 @@ impl<'a> Overlay<'a> {
     pub fn hide(&mut self) -> Result<()> {
         if self.shown {
             let _ = self.conn.conn.ungrab_keyboard(CURRENT_TIME);
-            self.conn.conn.unmap_window(self.window).map_err(Error::x11)?;
+            self.conn
+                .conn
+                .unmap_window(self.window)
+                .map_err(Error::x11)?;
             self.conn.flush()?;
             self.shown = false;
         }

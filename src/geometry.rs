@@ -149,7 +149,7 @@ mod tests {
         let a = Rect::new(10, 10, 20, 10); // x: 10..30, y: 10..20
         let b = Rect::new(40, 5, 10, 30); // x: 40..50, y: 5..35
         let u = a.union(&b);
-        assert_eq!(u, Rect::new(10, 5, 40, 30)); // x: 10..50, y: 5..35
+        assert_eq!(u, Rect::new(10, 5, 40, 30));
         // Union is commutative and idempotent.
         assert_eq!(b.union(&a), u);
         assert_eq!(a.union(&a), a);
