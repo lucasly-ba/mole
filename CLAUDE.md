@@ -5,10 +5,11 @@ Guidance for Claude Code working in this repository.
 ## What this is
 
 **mole** — a Rust tool for keyboard-only mouse navigation on Linux/X11:
-Vimium-style two-letter hints over every clickable element on the desktop, found
-via the AT-SPI accessibility tree with an OCR fallback. Built from the French
-spec in `mouseless_plan.pdf`. Public repo; also a portfolio piece, so keep it
-clean and the README honest about portability.
+Vimium-style two-letter hints over every line of on-screen text, found by reading
+the screen with OCR (Tesseract) and grouping words into phrase targets. Rooted in
+the French spec `mouseless_plan.pdf`, but the design has since pivoted to
+OCR-only (AT-SPI was removed — see JOURNEY §1). Public repo; also a portfolio
+piece, so keep it clean and the README honest about portability.
 
 Read `JOURNEY.md` for the full architecture and design rationale — it is the
 canonical explanation of how and why the code is shaped the way it is.
@@ -20,7 +21,7 @@ library.** Everything goes through the flake:
 
 ```sh
 nix develop -c cargo build      # build
-nix develop -c cargo test       # 44 pure-logic tests, no display needed
+nix develop -c cargo test       # pure-logic tests (58 unit + 6 integ), no display
 nix develop -c cargo clippy --all-targets
 nix build                       # packaged binary at ./result/bin/mole
 ```
@@ -34,7 +35,9 @@ Pipeline: capture → detect → label → render → match → act, wrapped in 
 
 - `geometry.rs`, `config/` — primitives + TOML config (hot-reloaded). Display-free.
 - `capture.rs`, `x11/{connection,hotkey,pointer,overlay}.rs` — all X-specific code.
-- `detect/{atspi,ocr}.rs` + `detect/mod.rs` — backends behind a `Detector` trait.
+- `detect/mod.rs` (Detector trait + finalize) + `detect/ocr/{mod,tesseract,tsv,phrase}.rs`
+  — OCR reading + word→phrase grouping (phrase.rs is the core, heavily tested).
+- `motion.rs` — accelerating step sizing for hjkl free-move (tested).
 - `hint/{label,layout}.rs` — prefix-free labels + anti-overlap placement.
 - `render/{mod,palette}.rs` — cairo ImageSurface → bytes uploaded via PutImage
   (deliberately **not** cairo-xcb).
@@ -55,7 +58,7 @@ Dependency arrows point inward: `geometry`/`config` know nothing about X11.
 
 ## Reality check
 
-Built and unit-tested headless. The X11/AT-SPI/cairo-surface/OCR-subprocess
+Built and unit-tested headless. The X11/cairo-surface/OCR-subprocess
 paths compile and are structurally complete but need a real X session to verify
 end-to-end (see `JOURNEY.md` §5). The flake's `checkFlags` skip those in
 sandboxed builds.

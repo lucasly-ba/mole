@@ -49,7 +49,7 @@
 
           meta = with pkgs.lib; {
             description = "Keyboard-only mouse navigation for Linux/X11";
-            homepage = "https://github.com/lucaslyba/mole";
+            homepage = "https://github.com/lucasly-ba/mole";
             license = licenses.mit;
             mainProgram = "mole";
             platforms = platforms.linux;

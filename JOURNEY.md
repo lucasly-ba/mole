@@ -9,23 +9,41 @@ prove out. If you're returning to this project after a while, start here.
 
 ## 1. The shape of the problem
 
-The goal (from `mouseless_plan.pdf`): press a key, get Vimium-style two-letter
-labels over every clickable thing on screen, type a label, and the pointer goes
-there. The hard parts aren't the idea — they're the systems plumbing:
+The goal (rooted in `mouseless_plan.pdf`): press a key, get Vimium-style
+two-letter labels over the screen, type a label, and the pointer goes there. The
+hard parts aren't the idea — they're the systems plumbing:
 
-- **Where are the clickable things?** Two answers, very different in nature: the
-  accessibility tree (structured, fast, sometimes absent) and OCR (universal,
-  slow, fuzzy).
-- **How do you draw on top of everything?** A borderless, click-through-ish,
-  transparent X11 window the window manager won't touch.
+- **What do you point at, and how do you find it?** This is the central design
+  choice, and it changed (see below): mole hints **text**, found by reading the
+  screen with OCR.
+- **How do you draw on top of everything?** A borderless, transparent X11 window
+  the window manager won't touch.
 - **How do you move/click the real pointer?** Synthetic input the rest of the
   system believes is hardware.
 - **How do you make it feel instant?** Set everything up once in a daemon; a
-  trigger only does the per-interaction work.
+  trigger only does the per-interaction work, and plain `hjkl` movement does no
+  scanning at all.
 
 So the architecture is a pipeline (capture → detect → label → render → match →
 act) wrapped in a daemon, with every stage in its own module so it can be read
 and tested alone.
+
+### The pivot: text is the map
+
+The first design hinted *clickable widgets*, found primarily through the AT-SPI
+accessibility tree, with OCR only as a fallback for apps that expose nothing.
+That was abandoned. Two problems: the accessibility tree only knows about
+controls an app *chooses to declare*, so huge swaths of the screen (document
+text, terminals, Electron apps, anything custom-drawn) were invisible to it; and
+maintaining two very different detection paths doubled the surface area for a
+feature that, in practice, the OCR path already covered.
+
+The bet mole makes instead: **almost everything you want to click is, or sits
+next to, a word.** So if you can jump to any *phrase* on screen, you can reach
+anything — with no dependency on app cooperation. That makes OCR the single
+source of targets, and turns "group recognised words into phrase-sized targets"
+([`detect/ocr/phrase.rs`](src/detect/ocr/phrase.rs)) into the heart of the tool.
+AT-SPI was removed outright.
 
 ## 2. Module map
 
@@ -45,12 +63,16 @@ src/
 │   ├── pointer.rs     warp + XTest clicks/drag
 │   └── overlay.rs     the transparent ARGB overlay window
 ├── detect/
-│   ├── mod.rs         Element/Role + CompositeDetector dedup (tested)
-│   ├── atspi.rs       AT-SPI tree walk over D-Bus (primary)
-│   └── ocr.rs         tesseract subprocess + TSV parse (tested parser)
+│   ├── mod.rs         Element + Detector trait + finalize() (tested)
+│   └── ocr/
+│       ├── mod.rs        OcrDetector: wires the steps together
+│       ├── tesseract.rs  drive the tesseract subprocess (capture → TSV)
+│       ├── tsv.rs        parse TSV into confident word boxes (tested)
+│       └── phrase.rs     group words into phrase targets (tested hard)
 ├── hint/
 │   ├── label.rs       prefix-free labels + live matching (tested hard)
 │   └── layout.rs      anti-overlap box placement (tested)
+├── motion.rs          accelerating step sizing for hjkl (tested)
 ├── render/
 │   ├── mod.rs         cairo drawing → raw ARGB buffer (tested)
 │   └── palette.rs     adaptive contrast (tested)
@@ -76,8 +98,11 @@ the systems modules together; `daemon` drives `session`.
   variants registered so the grab survives those modifiers. Clean event loop in
   `HotkeyManager::wait`. *Note:* in practice most users trigger via the socket
   from their WM (`exec mole click`), so this is the standalone path.
-- **§1.3 hjkl movement** → `x11/pointer.rs` + `session::run_free_move`. Relative
-  warps, configurable keys, normal/large step (Shift → uppercase keysym).
+- **§1.3 hjkl movement** → `x11/pointer.rs` + `session::run_free_move`, with the
+  step sizing factored into `motion.rs`. Relative warps, configurable keys,
+  normal/large step (Shift → uppercase keysym), and optional hold-to-accelerate:
+  `motion::Accelerator` grows the step while a direction repeats and resets when
+  it changes — pure arithmetic, unit-tested away from any X11.
 
 ### Phase 2 — Overlay
 
@@ -93,23 +118,35 @@ the systems modules together; `daemon` drives `session`.
 
 ### Phase 3 — Detection
 
-- **§3.1 AT-SPI** → `detect/atspi.rs`. Resolve the a11y bus via
-  `org.a11y.Bus.GetAddress`, then walk the tree from the registry root reading
-  `GetRole`, the `Name` property, and `GetExtents`. Bounded in depth/node count;
-  every node is best-effort so one misbehaving app can't break a session.
-- **§3.2 Hint generation** → `hint/label.rs`. The algorithm grows a breadth-first
-  frontier so labels are **prefix-free** (the instant your keys equal a label,
-  the choice is unambiguous — no Enter needed) and as short as possible. Live
-  matching narrows candidates per keystroke; a dead-end key is rejected without
-  being consumed.
-- **§3.3 OCR fallback** → `detect/ocr.rs`. **Decision:** shell out to the
-  `tesseract` binary (PPM in, TSV out) rather than link its C API. No extra
-  native build dep, trivially swappable for PaddleOCR, and the TSV parser is pure
-  and tested.
+Detection is OCR, end to end, split into small single-purpose steps under
+`detect/ocr/`:
 
-`detect/mod.rs` runs the configured backends in order and **deduplicates**,
-preferring AT-SPI rectangles over OCR ones for the same spot, then sorts results
-into reading order so the shortest labels land top-left.
+- **§3.1 Reading the screen** → `ocr/tesseract.rs`. **Decision:** shell out to the
+  `tesseract` binary (PPM in, TSV out) rather than link its C API. No extra native
+  build dependency, and the OCR engine becomes trivially swappable (PaddleOCR
+  behind the same step). Run with `--psm 11` ("sparse text") so it finds text
+  *anywhere*, not just in one assumed text block.
+- **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
+  the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
+  become word boxes in absolute screen coordinates. Pure and tested.
+- **§3.3 Phrase grouping** → `ocr/phrase.rs`, the heart of the tool. Hinting every
+  single word would bury the screen in labels, so words are merged into phrases:
+  cluster into lines (vertical centres within `line_tolerance` of each other),
+  then split each line on wide horizontal gaps (`max_word_gap`, as a multiple of
+  text height) so columns and separate controls stay distinct. A phrase's box is
+  the union of its words' boxes; its text is the words rejoined. The whole thing
+  is geometric — no pixels re-read — so it's deterministic and exhaustively
+  unit-tested.
+- **§3.4 Hint generation** → `hint/label.rs`. The algorithm grows a breadth-first
+  frontier so labels are **prefix-free** (the instant your keys equal a label, the
+  choice is unambiguous — no Enter needed) and as short as possible. Live matching
+  narrows candidates per keystroke; a dead-end key is rejected without being
+  consumed.
+
+`detect/mod.rs` keeps a one-method `Detector` trait (so the pipeline is testable
+with fakes and open to a future backend) and a shared `finalize()` pass that drops
+too-small / off-screen boxes and sorts into reading order, so the shortest labels
+land top-left.
 
 ### Phase 4 — Interactions
 
@@ -139,7 +176,6 @@ the target(s) while the overlay is up, hides it, *then* acts.
 |------|-------|--------------|
 | X11 | `x11rb` | Pure-Rust backend → no hard libxcb build dep; full XTest/Composite |
 | Overlay drawing | `cairo-rs` (ImageSurface only) | Vector text/boxes without a toolkit; image surface keeps it display-free and testable |
-| AT-SPI | `zbus` (blocking) | Pure-Rust D-Bus; blocking API keeps the session loop simple |
 | Clipboard | `arboard` | X11 backend is itself x11rb-based; handles PRIMARY↔CLIPBOARD |
 | Config | `serde` + `toml` + `notify` | Standard, ergonomic, hot-reload |
 | CLI | `clap` | Subcommands for free |
@@ -150,11 +186,13 @@ the target(s) while the overlay is up, hides it, *then* acts.
 This was built and unit-tested in a headless sandbox, so be clear-eyed about the
 two tiers:
 
-**Unit-tested and trustworthy** (run `cargo test`): geometry, config parsing &
-validation, the hint label algorithm (uniqueness + prefix-freedom across many
-sizes), live matching, anti-overlap layout, adaptive-contrast colour choice, the
-cairo render producing the expected buffer, OCR TSV parsing, detector dedup, the
-IPC command round-trip, modifier parsing, keysym mapping. The per-module unit
+**Unit-tested and trustworthy** (run `cargo test`): geometry (including box
+union), config parsing & validation, the hint label algorithm (uniqueness +
+prefix-freedom across many sizes), live matching, anti-overlap layout,
+adaptive-contrast colour choice, the cairo render producing the expected buffer,
+OCR TSV parsing, **phrase grouping** (adjacency, column splits, line tolerance,
+degenerate input), the **movement accelerator**, the detector `finalize` pass,
+the IPC command round-trip, modifier parsing, keysym mapping. The per-module unit
 tests live inline (`#[cfg(test)]`) so they can reach private helpers.
 
 **Integration-tested** (`tests/pipeline.rs`): the seams between modules, which
@@ -168,14 +206,14 @@ All display-free, so it runs in the sandbox alongside the unit tests.
 
 **Structurally complete, needs a real X session to verify end-to-end**: the
 GetImage capture, the overlay window creation/keyboard grab, XTest clicks/drags,
-the live AT-SPI traversal (needs a running a11y bus with real apps), and the OCR
-subprocess round-trip (needs the `tesseract` binary). The flake's `checkFlags`
-skip these in the sandboxed build for exactly this reason.
+and the OCR subprocess round-trip (needs the `tesseract` binary against a real
+screen). The flake's `checkFlags` skip these in the sandboxed build for exactly
+this reason.
 
-If you pick this up on a real machine, the first things to validate are: (1)
-overlay actually appears transparent under your compositor, (2) AT-SPI returns
-nodes for a GTK app (`AT-SPI` must be enabled in your session), (3) XTest clicks
-land where expected.
+If you pick this up on a real machine, the first things to validate are: (1) the
+overlay actually appears transparent under your compositor, (2) `tesseract` reads
+your screen and the phrases land where the text is (tune `min_confidence` /
+`max_word_gap` for your DPI), (3) XTest clicks land where expected.
 
 ## 6. Where to take it next
 
@@ -183,33 +221,34 @@ land where expected.
   a `wayland/` sibling implementing capture/overlay/pointer behind the same
   shapes would let `session.rs` stay unchanged. `wlr-layer-shell` for the
   overlay, `wlr-virtual-pointer` for input, the screencopy protocol for capture.
-- **Role-filtered modes.** `Role` is already detected; a "hint links only" mode
-  is a one-line filter in `session`.
-- **Faster fallback.** Swap the `tesseract` subprocess for PaddleOCR behind the
-  same `Detector` trait.
-- **Grid mode** for the no-accessibility, no-text case (games), as a third
-  `Detector`.
+- **Faster OCR.** Swap the `tesseract` subprocess for PaddleOCR behind the same
+  `Detector` trait — `detect/ocr/` is already isolated for it.
+- **Region scans.** OCR the focused window or the area under the cursor instead
+  of the full screen, to cut latency on big displays.
+- **Grid mode** for the no-text case (icon-only toolbars, games), as a second
+  `Detector` alongside OCR.
 
 ## 7. Building & running
 
-```sh
-nix develop -c cargo test     # the pure-logic suite
-nix develop -c cargo build    # full build (needs cairo via the flake)
-nix build                     # the packaged binary at ./result/bin/mole
-```
-
-To actually *use* it, get `mole` onto your `PATH` rather than calling it through
-`./result/bin` or `cargo run` each time. The flake makes this one command:
+mole is a normal cargo project. The only non-Rust pieces are the **cairo**
+development library (to build) and the **tesseract** binary (to run); install
+those from your distro, then:
 
 ```sh
-nix profile install .         # installs `mole` into ~/.nix-profile/bin (on PATH)
-mole daemon &                 # then bind `mole click` etc. in your WM
+cargo test                 # the pure-logic suite (no display needed)
+cargo build --release      # the binary at ./target/release/mole
+cargo install --path .     # build release + put `mole` on your PATH (~/.cargo/bin)
+mole daemon &              # then bind `mole click` etc. in your WM
 ```
 
-`nix profile install` builds `packages.default` (the same `buildRustPackage` the
-CI/`nix build` path uses) and symlinks the result into your user profile, so the
-binary you run is byte-for-byte the packaged one. For day-to-day hacking the dev
-shell is friendlier: `nix develop` defines a `mole` shell function that forwards
-to `cargo run`, so `mole click` exercises your working tree without a reinstall.
-Both routes exist on purpose — installed binary for *using* mole, `cargo run`
-wrapper for *changing* it.
+See the README's [Install](README.md#install) section for the per-distro
+dependency packages and the `PATH` one-liner. To *use* mole, get the binary onto
+your `PATH` (via `cargo install` or by copying `target/release/mole` somewhere on
+it) rather than calling it through `./target` each time.
+
+**Nix.** A flake is kept for reproducibility and CI. `nix develop` gives a dev
+shell with the toolchain, cairo and tesseract pre-wired (and a `mole` helper that
+forwards to `cargo run`); `nix profile install .` installs the packaged binary
+into `~/.nix-profile/bin`. On NixOS prefer the flake over `cargo install`, since
+a cargo-built binary won't find the nix-store cairo at runtime. The headless test
+commands used during development were `nix develop -c cargo test` / `clippy`.
