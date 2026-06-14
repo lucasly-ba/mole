@@ -13,7 +13,7 @@
 //! | [`config`]    | TOML config, defaults, hot reload                   |
 //! | [`geometry`]  | `Rect`/`Point` primitives                           |
 //! | [`capture`]   | Screen capture into a [`capture::Screen`]           |
-//! | [`x11`]       | Connection, global hotkey, pointer, overlay window  |
+//! | [`x11`]       | Connection, pointer, transparent overlay window     |
 //! | [`detect`]    | OCR text detection, grouped into phrase targets     |
 //! | [`hint`]      | Label generation, matching, anti-overlap layout     |
 //! | [`motion`]    | Accelerating step sizing for free hjkl movement     |
