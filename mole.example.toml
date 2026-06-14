@@ -17,9 +17,14 @@ move_up = "k"
 move_right = "l"
 
 [movement]
-# Pixels moved per key press. Hold Shift while moving for the large step.
+# Pixels moved per key press (base sensitivity). Hold Shift for the large step.
 step = 24
 large_step = 160
+# Step multiplier applied per consecutive press in the same direction, so holding
+# a key glides faster the longer you hold it. 1.0 disables acceleration.
+acceleration = 1.0
+# Hard ceiling (px) on a single accelerated step.
+max_step = 600
 
 [hints]
 # RGBA (0-255). Background of a hint label box.

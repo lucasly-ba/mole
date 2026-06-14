@@ -67,8 +67,15 @@ pub struct Keys {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Movement {
+    /// Pixels per tap (the base "sensitivity").
     pub step: i32,
+    /// Pixels per tap while holding Shift.
     pub large_step: i32,
+    /// Step multiplier applied per consecutive press in the same direction;
+    /// `1.0` disables acceleration.
+    pub acceleration: f64,
+    /// Hard ceiling (px) on a single accelerated step.
+    pub max_step: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -132,6 +139,8 @@ impl Default for Movement {
         Movement {
             step: 24,
             large_step: 160,
+            acceleration: 1.0,
+            max_step: 600,
         }
     }
 }
@@ -216,8 +225,13 @@ impl Config {
                 )));
             }
         }
-        if self.movement.step <= 0 || self.movement.large_step <= 0 {
+        if self.movement.step <= 0 || self.movement.large_step <= 0 || self.movement.max_step <= 0 {
             return Err(Error::Config("movement steps must be positive".into()));
+        }
+        if self.movement.acceleration < 1.0 {
+            return Err(Error::Config(
+                "movement.acceleration must be at least 1.0".into(),
+            ));
         }
         if self.hints.font_size <= 0.0 {
             return Err(Error::Config("hints.font_size must be positive".into()));

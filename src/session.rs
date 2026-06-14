@@ -18,6 +18,7 @@ use crate::error::Result;
 use crate::geometry::Point;
 use crate::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
 use crate::interaction;
+use crate::motion::{Accelerator, Dir};
 use crate::render::Renderer;
 use crate::x11::connection::KeyInput;
 use crate::x11::overlay::{Overlay, OverlayInput};
@@ -191,6 +192,7 @@ impl<'a> Session<'a> {
             first(&k.move_up),
             first(&k.move_right),
         );
+        let mut accel = Accelerator::new(m.step, m.large_step, m.acceleration, m.max_step);
 
         loop {
             match overlay.next_input()? {
@@ -199,20 +201,20 @@ impl<'a> Session<'a> {
                 | OverlayInput::Click(_) => break,
                 OverlayInput::Key(KeyInput::Char(c)) => {
                     let large = c.is_uppercase();
-                    let step = if large { m.large_step } else { m.step };
                     let lc = c.to_ascii_lowercase();
-                    let (dx, dy) = if lc == left {
-                        (-step, 0)
+                    let dir = if lc == left {
+                        Some(Dir::Left)
                     } else if lc == right {
-                        (step, 0)
+                        Some(Dir::Right)
                     } else if lc == up {
-                        (0, -step)
+                        Some(Dir::Up)
                     } else if lc == down {
-                        (0, step)
+                        Some(Dir::Down)
                     } else {
-                        (0, 0)
+                        None
                     };
-                    if dx != 0 || dy != 0 {
+                    if let Some(dir) = dir {
+                        let (dx, dy) = accel.next(dir, large);
                         pointer.move_relative(dx, dy)?;
                     }
                 }

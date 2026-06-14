@@ -16,6 +16,7 @@
 //! | [`x11`]       | Connection, global hotkey, pointer, overlay window  |
 //! | [`detect`]    | OCR text detection, grouped into phrase targets     |
 //! | [`hint`]      | Label generation, matching, anti-overlap layout     |
+//! | [`motion`]    | Accelerating step sizing for free hjkl movement     |
 //! | [`render`]    | Drawing the hint overlay with cairo                 |
 //! | [`interaction`] | Clicks, drags, clipboard                          |
 //! | [`session`]   | Orchestration of a single hint interaction          |
@@ -29,6 +30,7 @@ pub mod error;
 pub mod geometry;
 pub mod hint;
 pub mod interaction;
+pub mod motion;
 pub mod render;
 pub mod session;
 pub mod x11;
