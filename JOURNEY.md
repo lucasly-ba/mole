@@ -149,10 +149,14 @@ Detection is OCR, end to end, split into small single-purpose steps under
   barely changed. So those same strips double as a change cache: the daemon owns
   one `ScanCache`, and each scan only re-OCRs strips whose pixels changed since
   last time, reusing cached words for the rest — a hint on a static screen does
-  no OCR at all. Crucially the change test is by *magnitude*, not an exact hash:
-  a blinking caret or a ticking clock flips a handful of pixels and must be
-  ignored, or a dense strip would never stay clean (an exact hash made the cache
-  churn constantly in testing). On top of that, a background thread watches the
+  no OCR at all. Crucially the change test is by *locality*, not an exact hash:
+  each strip is a grid of cells, a cell counts as changed only when a real
+  fraction of its pixels differ, and the strip is re-read only when more than a
+  couple of cells changed. A ticking clock or a blinking text caret touches one
+  or two cells and is ignored; a scroll, a new window or a typed-out line touches
+  many and is caught. An exact hash (or a flat pixel-count) made every such tiny
+  flicker re-OCR a whole dense strip, so the cache never settled in testing. On
+  top of that, a background thread watches the
   whole screen with the X DAMAGE extension and re-reads changed strips once the
   screen settles, so the cache is usually already current when you trigger — the
   hint then appears with no scan at all. DAMAGE works here even with no
@@ -177,7 +181,11 @@ Detection is OCR, end to end, split into small single-purpose steps under
   frontier so labels are **prefix-free** (the instant your keys equal a label, the
   choice is unambiguous — no Enter needed) and as short as possible. Live matching
   narrows candidates per keystroke; a dead-end key is rejected without being
-  consumed.
+  consumed. Placement is `hint/layout.rs`; the chosen point is the **start of the
+  element's text** (left edge, vertically centred, nudged in to the first glyph),
+  not the phrase centre — a phrase target spans a whole line and its midpoint can
+  fall in a gap between words or past the clickable part, whereas the first glyphs
+  are reliably on the thing you meant to click.
 
 `detect/mod.rs` keeps a one-method `Detector` trait (so the pipeline is testable
 with fakes and open to a future backend) and a shared `finalize()` pass that drops
@@ -235,8 +243,9 @@ tests live inline (`#[cfg(test)]`) so they can reach private helpers.
 the isolated unit tests can't see. A `FakeDetector` implementing the public
 `Detector` trait feeds the exact chain `run_hint` uses — detect → `generate_labels`
 → `place_hints` → `HintMatcher` — and asserts that typing a label lands on the
-right *element centre* (not the label-box corner), that every label among 30
-elements is reachable, that stacked elements stay individually selectable, that a
+right *text start* (not the label-box corner or the phrase centre), that every
+label among 30 elements is reachable, that stacked elements stay individually
+selectable, that a
 dead-end keystroke doesn't strand the user, and that edge boxes clamp on-screen.
 All display-free, so it runs in the sandbox alongside the unit tests.
 
