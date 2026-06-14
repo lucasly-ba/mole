@@ -982,7 +982,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mouseless"
+name = "mole"
 version = "0.1.0"
 dependencies = [
  "anyhow",

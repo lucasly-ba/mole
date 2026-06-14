@@ -1,6 +1,6 @@
-# The mouseless journey
+# The mole journey
 
-This is the long-form companion to the README: how mouseless is built, *why*
+This is the long-form companion to the README: how mole is built, *why*
 each decision was made, how the plan maps onto the code, and — honestly — what is
 runtime-tested versus what is structurally correct but needs a real display to
 prove out. If you're returning to this project after a while, start here.
@@ -75,7 +75,7 @@ the systems modules together; `daemon` drives `session`.
 - **§1.2 Global hotkey** → `x11/hotkey.rs`. `XGrabKey` with the Caps/Num-Lock
   variants registered so the grab survives those modifiers. Clean event loop in
   `HotkeyManager::wait`. *Note:* in practice most users trigger via the socket
-  from their WM (`exec mouseless click`), so this is the standalone path.
+  from their WM (`exec mole click`), so this is the standalone path.
 - **§1.3 hjkl movement** → `x11/pointer.rs` + `session::run_free_move`. Relative
   warps, configurable keys, normal/large step (Shift → uppercase keysym).
 
@@ -196,5 +196,5 @@ land where expected.
 nix develop -c cargo test     # the pure-logic suite
 nix develop -c cargo build    # full build (needs cairo via the flake)
 nix build                     # the packaged binary
-mouseless daemon &            # then bind `mouseless click` etc. in your WM
+mole daemon &            # then bind `mole click` etc. in your WM
 ```

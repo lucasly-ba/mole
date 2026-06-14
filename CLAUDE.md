@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-**mouseless** — a Rust tool for keyboard-only mouse navigation on Linux/X11:
+**mole** — a Rust tool for keyboard-only mouse navigation on Linux/X11:
 Vimium-style two-letter hints over every clickable element on the desktop, found
 via the AT-SPI accessibility tree with an OCR fallback. Built from the French
 spec in `mouseless_plan.pdf`. Public repo; also a portfolio piece, so keep it
@@ -22,7 +22,7 @@ library.** Everything goes through the flake:
 nix develop -c cargo build      # build
 nix develop -c cargo test       # 44 pure-logic tests, no display needed
 nix develop -c cargo clippy --all-targets
-nix build                       # packaged binary at ./result/bin/mouseless
+nix build                       # packaged binary at ./result/bin/mole
 ```
 
 Flakes only see git-tracked files: **`git add` new files before `nix develop` /

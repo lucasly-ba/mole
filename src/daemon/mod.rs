@@ -1,9 +1,9 @@
 //! The background daemon (Plan §5.2).
 //!
-//! Running mouseless as a daemon keeps latency low: the X connection, keysym map
+//! Running mole as a daemon keeps latency low: the X connection, keysym map
 //! and detectors are all set up once, so a trigger only has to capture, detect
 //! and draw. Triggers arrive over a Unix socket — the natural fit for i3's
-//! `bindsym ... exec mouseless click`.
+//! `bindsym ... exec mole click`.
 //!
 //! Config is hot-reloaded on a background thread (Plan §5.1); interactions run
 //! one at a time on the main thread because they own the keyboard/overlay.

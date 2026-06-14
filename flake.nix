@@ -1,5 +1,5 @@
 {
-  description = "mouseless — keyboard-only mouse navigation for Linux/X11 (Vimium-style hints via AT-SPI + OCR)";
+  description = "mole — keyboard-only mouse navigation for Linux/X11 (Vimium-style hints via AT-SPI + OCR)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -34,7 +34,7 @@
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "mouseless";
+          pname = "mole";
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
@@ -50,9 +50,9 @@
 
           meta = with pkgs.lib; {
             description = "Keyboard-only mouse navigation for Linux/X11";
-            homepage = "https://github.com/lucaslyba/mouseless";
+            homepage = "https://github.com/lucaslyba/mole";
             license = licenses.mit;
-            mainProgram = "mouseless";
+            mainProgram = "mole";
             platforms = platforms.linux;
           };
         };
@@ -67,7 +67,7 @@
             pkgs.clippy
           ] ++ runtimeTools;
 
-          RUST_LOG = "mouseless=debug";
+          RUST_LOG = "mole=debug";
           # Help any pure-Rust crate that still wants to dlopen the X libs.
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
         };

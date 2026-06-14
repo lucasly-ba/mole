@@ -1,7 +1,7 @@
-# mouseless configuration
+# mole configuration
 #
-# Default search path: $XDG_CONFIG_HOME/mouseless/config.toml
-#                      (falls back to ~/.config/mouseless/config.toml)
+# Default search path: $XDG_CONFIG_HOME/mole/config.toml
+#                      (falls back to ~/.config/mole/config.toml)
 #
 # The running daemon watches this file and hot-reloads it on save.
 
@@ -50,5 +50,5 @@ language = "eng"
 
 [daemon]
 # Unix socket the daemon listens on. The CLI talks to it over this socket.
-# Defaults to $XDG_RUNTIME_DIR/mouseless.sock when unset.
-# socket = "/run/user/1000/mouseless.sock"
+# Defaults to $XDG_RUNTIME_DIR/mole.sock when unset.
+# socket = "/run/user/1000/mole.sock"

@@ -1,8 +1,8 @@
-//! mouseless command-line entry point.
+//! mole command-line entry point.
 //!
 //! One binary, two roles:
 //!
-//! * `mouseless daemon` — the long-running background process.
+//! * `mole daemon` — the long-running background process.
 //! * everything else (`click`, `teleport`, `drag`, …) — a thin client that
 //!   sends one command to the daemon over its Unix socket. This is what i3 (or
 //!   any WM) execs from a keybinding.
@@ -12,19 +12,19 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use mouseless::config::Config;
-use mouseless::daemon::ipc::{self, Command as IpcCommand};
-use mouseless::daemon::Daemon;
-use mouseless::error::Result;
+use mole::config::Config;
+use mole::daemon::ipc::{self, Command as IpcCommand};
+use mole::daemon::Daemon;
+use mole::error::Result;
 
 #[derive(Parser)]
 #[command(
-    name = "mouseless",
+    name = "mole",
     version,
     about = "Keyboard-only mouse navigation for Linux/X11"
 )]
 struct Cli {
-    /// Path to the config file (defaults to ~/.config/mouseless/config.toml).
+    /// Path to the config file (defaults to ~/.config/mole/config.toml).
     #[arg(long, global = true)]
     config: Option<PathBuf>,
 
@@ -62,7 +62,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("mouseless: {e}");
+            eprintln!("mole: {e}");
             ExitCode::FAILURE
         }
     }
@@ -79,7 +79,7 @@ fn run() -> Result<()> {
         }
         Cmd::DumpConfig => {
             let toml = toml::to_string_pretty(&Config::default())
-                .map_err(|e| mouseless::Error::Config(e.to_string()))?;
+                .map_err(|e| mole::Error::Config(e.to_string()))?;
             print!("{toml}");
             Ok(())
         }
@@ -90,7 +90,7 @@ fn run() -> Result<()> {
             let response = ipc::send(&socket, command)?;
             println!("{response}");
             if response.starts_with("err:") {
-                return Err(mouseless::Error::Ipc(response));
+                return Err(mole::Error::Ipc(response));
             }
             Ok(())
         }
@@ -99,8 +99,8 @@ fn run() -> Result<()> {
 
 /// Map a client subcommand to its IPC command.
 fn client_command(cmd: &Cmd) -> IpcCommand {
-    use mouseless::session::Mode;
-    use mouseless::x11::Button;
+    use mole::session::Mode;
+    use mole::x11::Button;
     match cmd {
         Cmd::Teleport => IpcCommand::Hint(Mode::Teleport),
         Cmd::Click => IpcCommand::Hint(Mode::Click {
@@ -128,5 +128,5 @@ fn client_command(cmd: &Cmd) -> IpcCommand {
 
 /// Default config path, with a sane fallback if `$HOME` is unset.
 fn default_config_path() -> PathBuf {
-    Config::default_path().unwrap_or_else(|| PathBuf::from("mouseless.toml"))
+    Config::default_path().unwrap_or_else(|| PathBuf::from("mole.toml"))
 }

@@ -1,4 +1,4 @@
-//! # mouseless
+//! # mole
 //!
 //! Keyboard-only mouse navigation for Linux/X11. A background daemon waits for a
 //! trigger, finds every text/clickable element on screen (via the AT-SPI

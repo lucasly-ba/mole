@@ -6,14 +6,14 @@
 //! `session::Session::run_hint` wires them together — minus the X11/cairo I/O,
 //! which needs a real display and is covered by `JOURNEY.md §5` instead.
 //!
-//! Being a `tests/` crate, this sees only mouseless's public API, so it doubles
+//! Being a `tests/` crate, this sees only mole's public API, so it doubles
 //! as a check that the pipeline is usable from outside the crate.
 
-use mouseless::capture::Screen;
-use mouseless::detect::{Detector, Element, Role, Source};
-use mouseless::geometry::{Point, Rect};
-use mouseless::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
-use mouseless::Result;
+use mole::capture::Screen;
+use mole::detect::{Detector, Element, Role, Source};
+use mole::geometry::{Point, Rect};
+use mole::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
+use mole::Result;
 
 const ALPHABET: &str = "asdfghjkl";
 const FONT_SIZE: f64 = 13.0;

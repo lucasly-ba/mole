@@ -1,4 +1,4 @@
-# mouseless
+# mole
 
 **Keyboard-only mouse navigation for Linux/X11.** Hit a keybinding, and every
 clickable thing on screen gets a two-letter label — type the letters and the
@@ -27,7 +27,7 @@ to accessibility — Electron apps, terminals, games — it falls back to **OCR*
 
 On a keyboard-driven setup, reaching for the mouse is the slow part. Existing
 tools each give up something: [warpd] is grid-only with no text awareness;
-[chelleport] is X11-only with ~1s OCR latency. mouseless aims for the best of
+[chelleport] is X11-only with ~1s OCR latency. mole aims for the best of
 both — accessibility-tree precision first, optimised OCR only as a fallback —
 in a single native Rust binary.
 
@@ -57,7 +57,7 @@ A flake is provided, so on any system with Nix you get a reproducible build and
 all native dependencies (cairo, tesseract) without touching your system:
 
 ```sh
-nix run github:lucaslyba/mouseless -- daemon      # run the daemon
+nix run github:lucaslyba/mole -- daemon      # run the daemon
 nix develop                                        # dev shell with the toolchain
 nix build                                          # build the package
 ```
@@ -77,21 +77,21 @@ cargo install --path . --no-default-features
 
 ## Usage
 
-mouseless runs as a daemon and is triggered by a small client command — the
+mole runs as a daemon and is triggered by a small client command — the
 client is what you bind to a key in your WM.
 
 ```sh
-mouseless daemon            # start the background process (autostart this)
+mole daemon            # start the background process (autostart this)
 
-mouseless teleport          # hint, then move the pointer there
-mouseless click             # hint, then left-click
-mouseless double-click      # hint, then double-click
-mouseless right-click       # hint, then right-click
-mouseless drag              # pick two hints, drag between them, copy selection
-mouseless move              # free hjkl pointer movement
-mouseless ping              # check the daemon is alive
-mouseless reload            # reload config now
-mouseless dump-config       # print the default config to stdout
+mole teleport          # hint, then move the pointer there
+mole click             # hint, then left-click
+mole double-click      # hint, then double-click
+mole right-click       # hint, then right-click
+mole drag              # pick two hints, drag between them, copy selection
+mole move              # free hjkl pointer movement
+mole ping              # check the daemon is alive
+mole reload            # reload config now
+mole dump-config       # print the default config to stdout
 ```
 
 While hints are showing: type a label to pick it, **Backspace** to correct,
@@ -100,21 +100,21 @@ While hints are showing: type a label to pick it, **Backspace** to correct,
 ### Example i3 binding
 
 ```i3config
-exec_always --no-startup-id mouseless daemon
+exec_always --no-startup-id mole daemon
 
-bindsym $mod+a       exec --no-startup-id mouseless click
-bindsym $mod+Shift+a exec --no-startup-id mouseless teleport
-bindsym $mod+g       exec --no-startup-id mouseless drag
-bindsym $mod+m       exec --no-startup-id mouseless move
+bindsym $mod+a       exec --no-startup-id mole click
+bindsym $mod+Shift+a exec --no-startup-id mole teleport
+bindsym $mod+g       exec --no-startup-id mole drag
+bindsym $mod+m       exec --no-startup-id mole move
 ```
 
-The same idea works in any WM: bind a key to `exec mouseless <command>`.
+The same idea works in any WM: bind a key to `exec mole <command>`.
 
 ## Configuration
 
-mouseless reads `~/.config/mouseless/config.toml` (override with `--config`) and
-hot-reloads it on save. Run `mouseless dump-config` for the full annotated
-default, or see [`mouseless.example.toml`](./mouseless.example.toml). Everything
+mole reads `~/.config/mole/config.toml` (override with `--config`) and
+hot-reloads it on save. Run `mole dump-config` for the full annotated
+default, or see [`mole.example.toml`](./mole.example.toml). Everything
 is optional — omit a key and the default is used. Highlights:
 
 ```toml

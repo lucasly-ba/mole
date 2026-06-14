@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// Convenient alias used throughout the crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// All the ways mouseless can fail.
+/// All the ways mole can fail.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("configuration error: {0}")]

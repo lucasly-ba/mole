@@ -3,7 +3,7 @@
 //! [`Screen`] is a raw RGBA-ish snapshot of (a region of) the root window plus
 //! the geometry it covers. Detection backends and the renderer's adaptive
 //! contrast both read from it. The capture itself uses X11 `GetImage`, which
-//! returns server-native pixel data; on the little-endian systems mouseless
+//! returns server-native pixel data; on the little-endian systems mole
 //! targets that is BGRX/BGRA, which [`Screen::pixel`] accounts for.
 
 use x11rb::protocol::xproto::{ConnectionExt as _, ImageFormat};

@@ -2,7 +2,7 @@
 //!
 //! A deliberately tiny line protocol over a Unix socket: the client writes one
 //! command word and reads one status line. This is all i3 needs
-//! (`bindsym $mod+a exec mouseless click`) and keeps the daemon dependency-free.
+//! (`bindsym $mod+a exec mole click`) and keeps the daemon dependency-free.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -86,10 +86,10 @@ pub fn socket_path(config: &Config) -> PathBuf {
         return p.clone();
     }
     if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-        return PathBuf::from(dir).join("mouseless.sock");
+        return PathBuf::from(dir).join("mole.sock");
     }
     let uid = unsafe { libc_getuid() };
-    PathBuf::from(format!("/tmp/mouseless-{uid}.sock"))
+    PathBuf::from(format!("/tmp/mole-{uid}.sock"))
 }
 
 // Avoid pulling in the `libc` crate for a single call.
@@ -102,7 +102,7 @@ extern "C" {
 pub fn send(path: &std::path::Path, command: Command) -> Result<String> {
     let mut stream = UnixStream::connect(path).map_err(|e| {
         Error::Ipc(format!(
-            "could not connect to daemon at {path:?} ({e}); is `mouseless daemon` running?"
+            "could not connect to daemon at {path:?} ({e}); is `mole daemon` running?"
         ))
     })?;
     writeln!(stream, "{}", command.as_word()).map_err(|e| Error::Ipc(e.to_string()))?;

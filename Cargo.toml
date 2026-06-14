@@ -1,22 +1,22 @@
 [package]
-name = "mouseless"
+name = "mole"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Keyboard-only mouse navigation for Linux/X11, with Vimium-style hints driven by AT-SPI and OCR."
 authors = ["Lucas Ly Ba <hi@lucaslyba.com>"]
 license = "MIT"
-repository = "https://github.com/lucaslyba/mouseless"
+repository = "https://github.com/lucaslyba/mole"
 readme = "README.md"
 keywords = ["x11", "accessibility", "keyboard", "mouse", "hints"]
 categories = ["command-line-utilities"]
 
 [[bin]]
-name = "mouseless"
+name = "mole"
 path = "src/main.rs"
 
 [lib]
-name = "mouseless"
+name = "mole"
 path = "src/lib.rs"
 
 [features]

@@ -1,6 +1,6 @@
 //! Configuration: TOML on disk, [`serde`] in memory, hot-reloaded by the daemon.
 //!
-//! Every section has a sensible default so a brand-new user can run mouseless
+//! Every section has a sensible default so a brand-new user can run mole
 //! with no config file at all. [`Config::load`] merges whatever the user wrote
 //! on top of those defaults.
 
@@ -171,14 +171,14 @@ impl Default for Ocr {
 }
 
 impl Config {
-    /// The conventional config path: `$XDG_CONFIG_HOME/mouseless/config.toml`,
-    /// falling back to `~/.config/mouseless/config.toml`.
+    /// The conventional config path: `$XDG_CONFIG_HOME/mole/config.toml`,
+    /// falling back to `~/.config/mole/config.toml`.
     pub fn default_path() -> Option<PathBuf> {
         let base = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-        Some(base.join("mouseless").join("config.toml"))
+        Some(base.join("mole").join("config.toml"))
     }
 
     /// Load and validate config from `path`. A missing file is not an error: the
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn example_config_parses() {
-        let text = include_str!("../../mouseless.example.toml");
+        let text = include_str!("../../mole.example.toml");
         let cfg = Config::from_toml(text).expect("example config should parse");
         assert_eq!(cfg.keys.hint_alphabet, "asdfghjkl");
         assert_eq!(cfg.movement.large_step, 160);

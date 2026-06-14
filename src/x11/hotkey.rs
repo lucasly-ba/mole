@@ -7,8 +7,8 @@
 //! [`HotkeyManager`] is the standalone trigger path: register a combination and
 //! block on [`HotkeyManager::wait`] for its action name. It owns its grabs on a
 //! connection so they survive independently of the overlay. In practice most
-//! users trigger mouseless via the daemon's Unix socket from their window manager
-//! (`exec mouseless click`), so this path is here for setups that would rather
+//! users trigger mole via the daemon's Unix socket from their window manager
+//! (`exec mole click`), so this path is here for setups that would rather
 //! grab the key directly than route through a WM binding.
 
 use x11rb::connection::Connection as _;
