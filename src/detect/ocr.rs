@@ -14,7 +14,7 @@ use std::process::{Command, Stdio};
 
 use crate::capture::Screen;
 use crate::config::Config;
-use crate::detect::{Detector, Element, Role, Source};
+use crate::detect::{self, Detector, Element};
 use crate::error::{Error, Result};
 use crate::geometry::Rect;
 
@@ -25,6 +25,7 @@ const MIN_CONFIDENCE: f32 = 50.0;
 pub struct OcrDetector {
     binary: String,
     language: String,
+    min_element_size: i32,
 }
 
 impl OcrDetector {
@@ -32,6 +33,7 @@ impl OcrDetector {
         OcrDetector {
             binary: config.ocr.binary.clone(),
             language: config.ocr.language.clone(),
+            min_element_size: config.ocr.min_element_size,
         }
     }
 
@@ -99,7 +101,8 @@ impl Detector for OcrDetector {
     fn detect(&self, screen: &Screen) -> Result<Vec<Element>> {
         let ppm = Self::encode_ppm(screen);
         let tsv = self.run_tesseract(ppm)?;
-        Ok(parse_tsv(&tsv, screen.bounds()))
+        let words = parse_tsv(&tsv, screen.bounds());
+        Ok(detect::finalize(words, self.min_element_size, screen.bounds()))
     }
 }
 
@@ -152,7 +155,7 @@ fn parse_tsv(tsv: &str, region: Rect) -> Vec<Element> {
             continue;
         };
         let rect = Rect::new(region.x + left, region.y + top, w, h);
-        elements.push(Element::new(rect, text, Role::Other, Source::Ocr));
+        elements.push(Element::new(rect, text));
     }
     elements
 }
@@ -173,7 +176,6 @@ mod tests {
         assert_eq!(els[0].text, "File");
         // Offset by the region origin.
         assert_eq!(els[0].rect, Rect::new(110, 220, 40, 12));
-        assert_eq!(els[0].source, Source::Ocr);
     }
 
     #[test]

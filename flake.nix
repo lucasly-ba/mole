@@ -40,11 +40,10 @@
           cargoLock.lockFile = ./Cargo.lock;
           inherit nativeBuildInputs buildInputs;
 
-          # The X11/AT-SPI/cairo surface code needs a live display; only the
-          # pure-logic unit tests are meaningful in the sandboxed build.
+          # The X11/cairo-surface code needs a live display; only the pure-logic
+          # unit tests are meaningful in the sandboxed build.
           checkFlags = [
             "--skip=x11::"
-            "--skip=detect::atspi"
             "--skip=overlay"
           ];
 

@@ -100,10 +100,9 @@ pub fn place_hints(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::detect::{Role, Source};
 
     fn elem(x: i32, y: i32, w: i32, h: i32) -> Element {
-        Element::new(Rect::new(x, y, w, h), "t", Role::Link, Source::AtSpi)
+        Element::new(Rect::new(x, y, w, h), "t")
     }
 
     fn no_overlaps(boxes: &[HintBox], gap: i32) -> bool {

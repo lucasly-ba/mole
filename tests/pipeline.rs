@@ -10,7 +10,7 @@
 //! as a check that the pipeline is usable from outside the crate.
 
 use mole::capture::Screen;
-use mole::detect::{Detector, Element, Role, Source};
+use mole::detect::{Detector, Element};
 use mole::geometry::{Point, Rect};
 use mole::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
 use mole::Result;
@@ -64,7 +64,7 @@ fn type_label(boxes: &[HintBox], label: &str) -> MatchState {
 }
 
 fn elem(x: i32, y: i32, w: i32, h: i32) -> Element {
-    Element::new(Rect::new(x, y, w, h), "t", Role::Link, Source::AtSpi)
+    Element::new(Rect::new(x, y, w, h), "t")
 }
 
 #[test]
@@ -136,9 +136,9 @@ fn every_element_is_reachable_by_typing_its_label() {
 
 #[test]
 fn stacked_elements_stay_individually_selectable() {
-    // Three elements on the exact same spot (a common AT-SPI pattern: a button
-    // wrapping a label wrapping an image). Layout must separate the boxes, and
-    // each must remain reachable with its own keys.
+    // Three elements on the exact same spot (e.g. overlapping phrases the OCR
+    // pass reports at the same origin). Layout must separate the boxes, and each
+    // must remain reachable with its own keys.
     let detector = FakeDetector {
         elements: vec![elem(100, 100, 30, 16), elem(100, 100, 30, 16), elem(100, 100, 30, 16)],
     };

@@ -1,10 +1,10 @@
 //! # mole
 //!
 //! Keyboard-only mouse navigation for Linux/X11. A background daemon waits for a
-//! trigger, finds every text/clickable element on screen (via the AT-SPI
-//! accessibility tree, falling back to OCR), draws a transparent overlay that
-//! labels each one with a couple of letters, and teleports — or clicks, or drags
-//! — the pointer to whichever label you type.
+//! trigger, reads every line of text on screen with OCR, draws a transparent
+//! overlay that labels each phrase with a couple of letters, and teleports — or
+//! clicks, or drags — the pointer to whichever label you type. Between triggers
+//! the same daemon also does free `hjkl` pointer movement, no scanning involved.
 //!
 //! The crate is split so each concern is testable in isolation:
 //!
@@ -14,7 +14,7 @@
 //! | [`geometry`]  | `Rect`/`Point` primitives                           |
 //! | [`capture`]   | Screen capture into a [`capture::Screen`]           |
 //! | [`x11`]       | Connection, global hotkey, pointer, overlay window  |
-//! | [`detect`]    | AT-SPI and OCR element detection                    |
+//! | [`detect`]    | OCR text detection, grouped into phrase targets     |
 //! | [`hint`]      | Label generation, matching, anti-overlap layout     |
 //! | [`render`]    | Drawing the hint overlay with cairo                 |
 //! | [`interaction`] | Clicks, drags, clipboard                          |

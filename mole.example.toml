@@ -35,18 +35,12 @@ font_size = 13.0
 # Minimum gap (px) enforced between two hint boxes by the anti-overlap pass.
 min_gap = 4
 
-[detection]
-# Detection backends tried in order. Valid values: "atspi", "ocr".
-backends = ["atspi", "ocr"]
-# Ignore elements smaller than this many pixels on either axis (noise).
-min_element_size = 6
-# Ignore elements whose label text is empty (AT-SPI often exposes blanks).
-require_text = false
-
 [ocr]
-# Path/name of the tesseract binary used for the OCR fallback.
+# Path/name of the tesseract binary that reads the screen.
 binary = "tesseract"
 language = "eng"
+# Ignore phrase boxes smaller than this many pixels on either axis (noise).
+min_element_size = 6
 
 [daemon]
 # Unix socket the daemon listens on. The CLI talks to it over this socket.

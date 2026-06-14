@@ -3,7 +3,7 @@ name = "mole"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Keyboard-only mouse navigation for Linux/X11, with Vimium-style hints driven by AT-SPI and OCR."
+description = "Keyboard-only mouse navigation for Linux/X11: Vimium-style hints over every line of on-screen text, found with OCR."
 authors = ["Lucas Ly Ba <hi@lucaslyba.com>"]
 license = "MIT"
 repository = "https://github.com/lucaslyba/mole"
@@ -18,13 +18,6 @@ path = "src/main.rs"
 [lib]
 name = "mole"
 path = "src/lib.rs"
-
-[features]
-default = ["ocr"]
-# OCR fallback. Implemented by shelling out to the `tesseract` binary, so the
-# feature only gates compilation of the fallback path -- no extra build-time
-# native dependency is pulled in.
-ocr = []
 
 [dependencies]
 # --- X11 (capture, overlay, input, XTest) ---
@@ -42,11 +35,6 @@ x11rb = { version = "0.13", features = [
 # Only the in-memory ImageSurface API is used; the rendered buffer is uploaded
 # to the X overlay with x11rb's PutImage. This keeps cairo-xcb out of the build.
 cairo-rs = "0.20"
-
-# --- AT-SPI over D-Bus (pure Rust). Default features give us the blocking API
-#     plus the async-io runtime it is built on. ---
-zbus = "4"
-zvariant = "4"
 
 # --- Clipboard (X11 backend is pure Rust via x11rb) ---
 arboard = { version = "3", default-features = false }

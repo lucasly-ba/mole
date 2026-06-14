@@ -50,7 +50,6 @@ pub struct Config {
     pub keys: Keys,
     pub movement: Movement,
     pub hints: Hints,
-    pub detection: Detection,
     pub ocr: Ocr,
     pub daemon: Daemon,
 }
@@ -84,27 +83,17 @@ pub struct Hints {
     pub min_gap: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Detection {
-    pub backends: Vec<Backend>,
-    pub min_element_size: i32,
-    pub require_text: bool,
-}
-
-/// A detection backend, selectable from config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Backend {
-    AtSpi,
-    Ocr,
-}
-
+/// OCR backend tuning. These are the "sensitivity" knobs for how aggressively
+/// text is read off the screen and how words are grouped into phrase targets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Ocr {
+    /// Path/name of the `tesseract` binary.
     pub binary: String,
+    /// Recognition language passed to Tesseract (`-l`), e.g. `"eng"`.
     pub language: String,
+    /// Ignore phrase boxes smaller than this many pixels on either axis (noise).
+    pub min_element_size: i32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -151,21 +140,12 @@ impl Default for Hints {
     }
 }
 
-impl Default for Detection {
-    fn default() -> Self {
-        Detection {
-            backends: vec![Backend::AtSpi, Backend::Ocr],
-            min_element_size: 6,
-            require_text: false,
-        }
-    }
-}
-
 impl Default for Ocr {
     fn default() -> Self {
         Ocr {
             binary: "tesseract".to_string(),
             language: "eng".to_string(),
+            min_element_size: 6,
         }
     }
 }
@@ -229,9 +209,9 @@ impl Config {
         if self.hints.font_size <= 0.0 {
             return Err(Error::Config("hints.font_size must be positive".into()));
         }
-        if self.detection.backends.is_empty() {
+        if self.ocr.min_element_size < 0 {
             return Err(Error::Config(
-                "detection.backends must list at least one backend".into(),
+                "ocr.min_element_size must not be negative".into(),
             ));
         }
         Ok(())
@@ -258,7 +238,7 @@ mod tests {
         let cfg = Config::from_toml(text).expect("example config should parse");
         assert_eq!(cfg.keys.hint_alphabet, "asdfghjkl");
         assert_eq!(cfg.movement.large_step, 160);
-        assert_eq!(cfg.detection.backends, vec![Backend::AtSpi, Backend::Ocr]);
+        assert_eq!(cfg.ocr.language, "eng");
     }
 
     #[test]

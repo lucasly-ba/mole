@@ -28,9 +28,6 @@ pub enum Error {
     #[error("X11 error: {0}")]
     X11(String),
 
-    #[error("AT-SPI / D-Bus error: {0}")]
-    AtSpi(String),
-
     #[error("OCR error: {0}")]
     Ocr(String),
 
@@ -54,11 +51,6 @@ impl Error {
     /// Build an [`Error::X11`] from anything displayable.
     pub fn x11(e: impl std::fmt::Display) -> Self {
         Error::X11(e.to_string())
-    }
-
-    /// Build an [`Error::AtSpi`] from anything displayable.
-    pub fn atspi(e: impl std::fmt::Display) -> Self {
-        Error::AtSpi(e.to_string())
     }
 
     /// Build an [`Error::Render`] from anything displayable.

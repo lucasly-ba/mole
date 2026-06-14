@@ -13,7 +13,7 @@
 
 use crate::capture::Screen;
 use crate::config::Config;
-use crate::detect::CompositeDetector;
+use crate::detect::{self, Detector};
 use crate::error::Result;
 use crate::geometry::Point;
 use crate::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
@@ -35,7 +35,7 @@ pub enum Mode {
 pub struct Session<'a> {
     conn: &'a Conn,
     config: &'a Config,
-    detector: CompositeDetector,
+    detector: Box<dyn Detector>,
     renderer: Renderer,
 }
 
@@ -44,7 +44,7 @@ impl<'a> Session<'a> {
         Ok(Session {
             conn,
             config,
-            detector: CompositeDetector::from_config(config)?,
+            detector: detect::from_config(config),
             renderer: Renderer::new(config.hints.clone()),
         })
     }
