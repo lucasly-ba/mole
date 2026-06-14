@@ -1,0 +1,34 @@
+# systemd user service for the mole daemon.
+#
+# Install:
+#   cp contrib/mole.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mole.service
+#
+# mole talks to X11, so the daemon needs DISPLAY and XAUTHORITY. Under a display
+# manager that populates the systemd user environment this is automatic; under a
+# bare WM like i3 it usually is not, so either uncomment the Environment lines
+# below (adjust the values to match your session) or, from your WM autostart,
+# run once before starting the service:
+#
+#   systemctl --user import-environment DISPLAY XAUTHORITY
+#
+# Adjust ExecStart to wherever your `mole` binary lives (run `command -v mole`);
+# `%h` expands to your home directory.
+
+[Unit]
+Description=mole keyboard pointer daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/mole daemon
+Restart=on-failure
+RestartSec=2
+# Uncomment and adjust if your session does not export these into systemd --user:
+#Environment=DISPLAY=:0
+#Environment=XAUTHORITY=%h/.Xauthority
+
+[Install]
+WantedBy=graphical-session.target
