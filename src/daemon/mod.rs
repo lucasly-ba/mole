@@ -9,12 +9,14 @@
 //! one at a time on the main thread because they own the keyboard/overlay.
 
 pub mod ipc;
+mod prewarm;
 
 pub use ipc::Command;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::{Config, ConfigWatcher};
@@ -28,9 +30,12 @@ pub struct Daemon {
     config: Arc<Mutex<Config>>,
     config_path: PathBuf,
     socket_path: PathBuf,
-    /// OCR cache shared across hints (and, later, the background pre-warm), so a
-    /// hint on a mostly-unchanged screen re-reads only what moved.
+    /// OCR cache shared across hints and the background pre-warm, so a hint on a
+    /// mostly-unchanged screen re-reads only what moved.
     scan_cache: Arc<Mutex<ScanCache>>,
+    /// Set while a hint/move interaction owns the screen, so the pre-warmer holds
+    /// off (its capture would otherwise contain our own overlay).
+    interaction_active: Arc<AtomicBool>,
 }
 
 impl Daemon {
@@ -42,6 +47,7 @@ impl Daemon {
             config_path,
             socket_path,
             scan_cache: Arc::new(Mutex::new(ScanCache::new())),
+            interaction_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -52,6 +58,11 @@ impl Daemon {
         log::info!("daemon listening on {:?}", self.socket_path);
 
         self.spawn_config_watcher();
+        prewarm::spawn(
+            Arc::clone(&self.config),
+            Arc::clone(&self.scan_cache),
+            Arc::clone(&self.interaction_active),
+        );
 
         for stream in listener.incoming() {
             match stream {
@@ -149,11 +160,17 @@ impl Daemon {
         // Snapshot the config so a mid-interaction reload can't change it.
         let cfg = self.config.lock().unwrap().clone();
         let session = Session::new(conn, &cfg, Arc::clone(&self.scan_cache))?;
-        match cmd {
+
+        // Tell the pre-warmer to hold off while we own the screen, so it doesn't
+        // capture (and cache) our own overlay.
+        self.interaction_active.store(true, Ordering::SeqCst);
+        let result = match cmd {
             Command::Hint(mode) => session.run_hint(mode),
             Command::FreeMove => session.run_free_move(),
             Command::Reload | Command::Ping => unreachable!("handled above"),
-        }
+        };
+        self.interaction_active.store(false, Ordering::SeqCst);
+        result
     }
 }
 
