@@ -54,12 +54,32 @@ in a single native Rust binary.
 ### With Nix (flake)
 
 A flake is provided, so on any system with Nix you get a reproducible build and
-all native dependencies (cairo, tesseract) without touching your system:
+all native dependencies (cairo, tesseract) without touching your system.
+
+**Put `mole` on your `PATH` (recommended):**
 
 ```sh
-nix run github:lucaslyba/mole -- daemon      # run the daemon
-nix develop                                        # dev shell with the toolchain
-nix build                                          # build the package
+nix profile install github:lucaslyba/mole   # or, from a local checkout: nix profile install .
+```
+
+This installs `mole` into `~/.nix-profile/bin` — already on your `PATH` — so you
+can call `mole daemon`, `mole click`, … from anywhere and from your WM bindings.
+Upgrade later with `nix profile upgrade mole`; remove with `nix profile remove mole`.
+
+**Or run / build without installing:**
+
+```sh
+nix run github:lucaslyba/mole -- daemon      # run straight from the flake
+nix build                                          # binary at ./result/bin/mole
+```
+
+**Hacking on it:** `nix develop` drops you in a shell with the full toolchain,
+where a `mole` helper runs the local debug build (`cargo run`) so you can iterate
+without reinstalling:
+
+```sh
+nix develop
+mole daemon        # = cargo run -- daemon, against your working tree
 ```
 
 ### With cargo
@@ -70,7 +90,7 @@ nix build                                          # build the package
 # Arch:           pacman -S cairo tesseract tesseract-data-eng
 # Fedora:         dnf install cairo-devel tesseract
 
-cargo install --path .
+cargo install --path .          # installs mole into ~/.cargo/bin (on your PATH)
 # Or without the OCR fallback:
 cargo install --path . --no-default-features
 ```

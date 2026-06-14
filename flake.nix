@@ -70,6 +70,14 @@
           RUST_LOG = "mole=debug";
           # Help any pure-Rust crate that still wants to dlopen the X libs.
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
+
+          # Inside the dev shell, `mole <cmd>` runs the local (debug) build so
+          # you can iterate without reinstalling. End users get `mole` on PATH
+          # via `nix profile install` instead (see the README).
+          shellHook = ''
+            mole() { cargo run --quiet -- "$@"; }
+            echo "dev shell ready — 'mole daemon', 'mole click', … run the local build (cargo run)."
+          '';
         };
 
         formatter = pkgs.nixpkgs-fmt;

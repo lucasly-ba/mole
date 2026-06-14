@@ -195,6 +195,21 @@ land where expected.
 ```sh
 nix develop -c cargo test     # the pure-logic suite
 nix develop -c cargo build    # full build (needs cairo via the flake)
-nix build                     # the packaged binary
-mole daemon &            # then bind `mole click` etc. in your WM
+nix build                     # the packaged binary at ./result/bin/mole
 ```
+
+To actually *use* it, get `mole` onto your `PATH` rather than calling it through
+`./result/bin` or `cargo run` each time. The flake makes this one command:
+
+```sh
+nix profile install .         # installs `mole` into ~/.nix-profile/bin (on PATH)
+mole daemon &                 # then bind `mole click` etc. in your WM
+```
+
+`nix profile install` builds `packages.default` (the same `buildRustPackage` the
+CI/`nix build` path uses) and symlinks the result into your user profile, so the
+binary you run is byte-for-byte the packaged one. For day-to-day hacking the dev
+shell is friendlier: `nix develop` defines a `mole` shell function that forwards
+to `cargo run`, so `mole click` exercises your working tree without a reinstall.
+Both routes exist on purpose — installed binary for *using* mole, `cargo run`
+wrapper for *changing* it.
