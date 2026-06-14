@@ -92,8 +92,18 @@ pub struct Ocr {
     pub binary: String,
     /// Recognition language passed to Tesseract (`-l`), e.g. `"eng"`.
     pub language: String,
+    /// Minimum Tesseract confidence (`0..=100`) for a word to be kept. Raise it
+    /// to drop shaky guesses, lower it to catch faint text.
+    pub min_confidence: f32,
     /// Ignore phrase boxes smaller than this many pixels on either axis (noise).
     pub min_element_size: i32,
+    /// How readily neighbouring words merge into one phrase target: the maximum
+    /// horizontal gap between two words, as a multiple of their text height.
+    /// Higher = longer phrases / fewer hints; lower = more, shorter targets.
+    pub max_word_gap: f64,
+    /// How strict "same line" is: two words share a line when their vertical
+    /// centres differ by at most this fraction of their text height.
+    pub line_tolerance: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -145,7 +155,10 @@ impl Default for Ocr {
         Ocr {
             binary: "tesseract".to_string(),
             language: "eng".to_string(),
+            min_confidence: 50.0,
             min_element_size: 6,
+            max_word_gap: 1.0,
+            line_tolerance: 0.5,
         }
     }
 }
@@ -212,6 +225,16 @@ impl Config {
         if self.ocr.min_element_size < 0 {
             return Err(Error::Config(
                 "ocr.min_element_size must not be negative".into(),
+            ));
+        }
+        if !(0.0..=100.0).contains(&self.ocr.min_confidence) {
+            return Err(Error::Config(
+                "ocr.min_confidence must be between 0 and 100".into(),
+            ));
+        }
+        if self.ocr.max_word_gap <= 0.0 || self.ocr.line_tolerance <= 0.0 {
+            return Err(Error::Config(
+                "ocr.max_word_gap and ocr.line_tolerance must be positive".into(),
             ));
         }
         Ok(())

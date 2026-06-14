@@ -83,6 +83,16 @@ impl Rect {
         p.x >= self.x && p.x < self.right() && p.y >= self.y && p.y < self.bottom()
     }
 
+    /// The smallest rectangle that contains both `self` and `other`. Used to
+    /// merge the word boxes of a phrase into one hint target.
+    pub fn union(&self, other: &Rect) -> Rect {
+        let x0 = self.x.min(other.x);
+        let y0 = self.y.min(other.y);
+        let x1 = self.right().max(other.right());
+        let y1 = self.bottom().max(other.bottom());
+        Rect::new(x0, y0, x1 - x0, y1 - y0)
+    }
+
     /// Clamp this rectangle to the bounds of `screen`, returning `None` if the
     /// result would be empty (fully off-screen).
     pub fn clamp_to(&self, screen: Rect) -> Option<Rect> {
@@ -132,6 +142,17 @@ mod tests {
 
         let offscreen = Rect::new(200, 200, 10, 10);
         assert_eq!(offscreen.clamp_to(screen), None);
+    }
+
+    #[test]
+    fn union_covers_both_rects() {
+        let a = Rect::new(10, 10, 20, 10); // x: 10..30, y: 10..20
+        let b = Rect::new(40, 5, 10, 30); // x: 40..50, y: 5..35
+        let u = a.union(&b);
+        assert_eq!(u, Rect::new(10, 5, 40, 30)); // x: 10..50, y: 5..35
+        // Union is commutative and idempotent.
+        assert_eq!(b.union(&a), u);
+        assert_eq!(a.union(&a), a);
     }
 
     #[test]
