@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::config::{Config, ConfigWatcher};
+use crate::detect::ScanCache;
 use crate::error::{Error, Result};
 use crate::session::Session;
 use crate::x11::Conn;
@@ -27,6 +28,9 @@ pub struct Daemon {
     config: Arc<Mutex<Config>>,
     config_path: PathBuf,
     socket_path: PathBuf,
+    /// OCR cache shared across hints (and, later, the background pre-warm), so a
+    /// hint on a mostly-unchanged screen re-reads only what moved.
+    scan_cache: Arc<Mutex<ScanCache>>,
 }
 
 impl Daemon {
@@ -37,6 +41,7 @@ impl Daemon {
             config: Arc::new(Mutex::new(config)),
             config_path,
             socket_path,
+            scan_cache: Arc::new(Mutex::new(ScanCache::new())),
         }
     }
 
@@ -82,6 +87,7 @@ impl Daemon {
     fn spawn_config_watcher(&self) {
         let path = self.config_path.clone();
         let shared = Arc::clone(&self.config);
+        let cache = Arc::clone(&self.scan_cache);
         std::thread::spawn(move || {
             let watcher = match ConfigWatcher::new(&path) {
                 Ok(w) => w,
@@ -92,7 +98,11 @@ impl Daemon {
             };
             loop {
                 match watcher.next_reload() {
-                    Ok(Some(cfg)) => *shared.lock().unwrap() = cfg,
+                    Ok(Some(cfg)) => {
+                        *shared.lock().unwrap() = cfg;
+                        // OCR params may have changed; force a fresh read.
+                        cache.lock().unwrap().invalidate();
+                    }
                     Ok(None) => {} // parse error already logged; keep current
                     Err(e) => {
                         log::warn!("config watcher stopped: {e}");
@@ -130,13 +140,15 @@ impl Daemon {
         if let Command::Reload = cmd {
             let cfg = Config::load(&self.config_path)?;
             *self.config.lock().unwrap() = cfg;
+            // OCR params may have changed; drop cached words so they're re-read.
+            self.scan_cache.lock().unwrap().invalidate();
             log::info!("config reloaded on request");
             return Ok(());
         }
 
         // Snapshot the config so a mid-interaction reload can't change it.
         let cfg = self.config.lock().unwrap().clone();
-        let session = Session::new(conn, &cfg)?;
+        let session = Session::new(conn, &cfg, Arc::clone(&self.scan_cache))?;
         match cmd {
             Command::Hint(mode) => session.run_hint(mode),
             Command::FreeMove => session.run_free_move(),
