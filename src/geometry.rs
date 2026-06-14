@@ -1,7 +1,7 @@
 //! Small, dependency-free geometry primitives shared across modules.
 //!
-//! Detection backends, the hint layout pass and the renderer all speak in terms
-//! of [`Rect`] and [`Point`], so they live here in one well-tested place.
+//! Detection, the hint layout pass and the renderer all speak in terms of
+//! [`Rect`] and [`Point`], so they live here in one well-tested place.
 
 use serde::{Deserialize, Serialize};
 

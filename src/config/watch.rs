@@ -39,6 +39,13 @@ impl ConfigWatcher {
         .map_err(|e| Error::Config(format!("failed to create watcher: {e}")))?;
 
         let watch_dir = path.parent().unwrap_or_else(|| Path::new("."));
+        // A brand-new user has no config file *or* config directory yet; without
+        // the directory, `notify` has nothing to watch and hot-reload would
+        // silently never arm. Create mole's own config dir (best-effort) so the
+        // watch attaches and a later first-time save is picked up live.
+        if !watch_dir.as_os_str().is_empty() && !watch_dir.exists() {
+            let _ = std::fs::create_dir_all(watch_dir);
+        }
         watcher
             .watch(watch_dir, RecursiveMode::NonRecursive)
             .map_err(|e| Error::Config(format!("failed to watch {watch_dir:?}: {e}")))?;

@@ -8,7 +8,7 @@ authors = ["Lucas Ly Ba <hi@lucaslyba.com>"]
 license = "MIT"
 repository = "https://github.com/lucasly-ba/mole"
 readme = "README.md"
-keywords = ["x11", "accessibility", "keyboard", "mouse", "hints"]
+keywords = ["x11", "ocr", "keyboard", "mouse", "hints"]
 categories = ["command-line-utilities"]
 
 [[bin]]

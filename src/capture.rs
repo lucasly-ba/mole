@@ -1,7 +1,7 @@
 //! Screen capture (Plan §1.1).
 //!
 //! [`Screen`] is a raw RGBA-ish snapshot of (a region of) the root window plus
-//! the geometry it covers. Detection backends and the renderer's adaptive
+//! the geometry it covers. The OCR detector and the renderer's adaptive
 //! contrast both read from it. The capture itself uses X11 `GetImage`, which
 //! returns server-native pixel data; on the little-endian systems mole
 //! targets that is BGRX/BGRA, which [`Screen::pixel`] accounts for.
@@ -90,6 +90,31 @@ impl Screen {
         &self.data
     }
 
+    /// The capture as a tight, top-to-bottom, 3-bytes-per-pixel **RGB** buffer —
+    /// the form OCR (and PPM) want. Converts from the server-native BGRX layout
+    /// in a single pass over the raw bytes, so it avoids the per-pixel,
+    /// bounds-checked sampling of [`Screen::pixel`] on the hot path (this runs on
+    /// the full screen for every hint).
+    pub fn to_rgb(&self) -> Vec<u8> {
+        let w = self.bounds.width.max(0) as usize;
+        let h = self.bounds.height.max(0) as usize;
+        let mut out = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            let row = y * self.stride;
+            for x in 0..w {
+                let off = row + x * self.bpp;
+                if off + 2 < self.data.len() {
+                    out.push(self.data[off + 2]); // R
+                    out.push(self.data[off + 1]); // G
+                    out.push(self.data[off]); // B
+                } else {
+                    out.extend_from_slice(&[0, 0, 0]);
+                }
+            }
+        }
+        out
+    }
+
     /// Colour at absolute screen coordinate `p`, or opaque black if out of range
     /// (callers sampling for contrast don't want to handle `Option`).
     pub fn pixel(&self, p: Point) -> Rgba {
@@ -170,5 +195,15 @@ mod tests {
     fn average_of_solid_is_that_color() {
         let s = solid(16, 16, 0, 128, 255); // B=0 G=128 R=255
         assert_eq!(s.average_color(Rect::new(0, 0, 16, 16)), Rgba::new(255, 128, 0, 255));
+    }
+
+    #[test]
+    fn to_rgb_converts_bgrx_to_tight_rgb() {
+        let s = solid(2, 2, 10, 20, 30); // B=10 G=20 R=30
+        let rgb = s.to_rgb();
+        assert_eq!(rgb.len(), 2 * 2 * 3, "tight 3 bytes per pixel");
+        // Every pixel is R,G,B in order.
+        assert_eq!(&rgb[0..3], &[30, 20, 10]);
+        assert!(rgb.chunks(3).all(|px| px == [30, 20, 10]));
     }
 }

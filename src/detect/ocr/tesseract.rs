@@ -12,7 +12,6 @@ use std::process::{Command, Stdio};
 
 use crate::capture::Screen;
 use crate::error::{Error, Result};
-use crate::geometry::Point;
 
 /// A configured handle to the OCR binary. Cheap to clone/rebuild on config
 /// reload; holds no process or connection between runs.
@@ -68,21 +67,13 @@ impl Tesseract {
     }
 }
 
-/// Encode a screen capture as a binary PPM (P6) for Tesseract/leptonica.
+/// Encode a screen capture as a binary PPM (P6) for Tesseract/leptonica: a tiny
+/// header followed by the tight RGB bytes.
 fn encode_ppm(screen: &Screen) -> Vec<u8> {
-    let w = screen.width();
-    let h = screen.height();
-    let mut out = Vec::with_capacity(16 + (w * h * 3) as usize);
+    let (w, h) = (screen.width(), screen.height());
+    let body = screen.to_rgb();
+    let mut out = Vec::with_capacity(16 + body.len());
     out.extend_from_slice(format!("P6\n{w} {h}\n255\n").as_bytes());
-    for y in 0..h {
-        for x in 0..w {
-            let c = screen
-                .pixel(Point::new(screen.bounds().x + x, screen.bounds().y + y))
-                .0;
-            out.push(c[0]); // R
-            out.push(c[1]); // G
-            out.push(c[2]); // B
-        }
-    }
+    out.extend_from_slice(&body);
     out
 }
