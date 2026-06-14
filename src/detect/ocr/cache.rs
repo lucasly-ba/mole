@@ -8,10 +8,14 @@
 //! compared to those pixels and only the ones that changed by more than a small
 //! fraction are read again — the rest reuse their cached words.
 //!
-//! Comparing by *magnitude* rather than an exact hash is deliberate: a blinking
-//! text caret or a ticking clock flips only a handful of pixels and must not
-//! force a whole dense strip to be re-OCR'd, or the cache would never settle on a
-//! normal desktop. A real edit changes far more and is caught.
+//! Comparing by *locality* rather than an exact hash is deliberate. Each strip
+//! is divided into a grid of small cells; a cell only counts as changed when a
+//! real fraction of its pixels differ (so antialiasing and a blinking caret —
+//! a few pixels — don't register at all), and a strip is only re-read when more
+//! than a couple of cells changed. A ticking clock or a blinking text caret
+//! touches one or two cells and is ignored; a scroll, a new window or a typed-out
+//! line touches many and is caught. An exact hash, by contrast, made every such
+//! tiny flicker re-OCR a whole dense strip, so the cache never settled.
 //!
 //! Because adjacent strips overlap, a change near a boundary registers in both
 //! strips, so boundary text is never left stale. The cache is held behind a
@@ -19,10 +23,14 @@
 
 use super::phrase::Word;
 
-/// Fraction of a strip's bytes that must differ before it counts as changed.
-/// Small enough to catch a word-sized edit, large enough to ignore a caret or a
-/// clock digit.
-const CHANGE_FRACTION: f64 = 0.0005;
+/// Side length (px) of a change-detection cell.
+const CELL: usize = 96;
+/// A cell counts as changed when more than this fraction of its pixels differ.
+/// High enough to shrug off a caret or sub-pixel antialiasing within the cell.
+const CELL_CHANGE_FRACTION: f64 = 0.05;
+/// A strip is re-read only when more than this many cells changed. Absorbs a
+/// couple of independent noise sources (a clock *and* a caret) in one strip.
+const NOISE_CELLS: usize = 2;
 
 /// One horizontal strip's cached state.
 struct Strip {
@@ -125,7 +133,7 @@ impl ScanCache {
             let end = ((s.y0 + s.h).max(0) as usize * w * 3).min(rgb.len());
             let changed = !self.have_prev
                 || !s.scanned
-                || strip_changed(&rgb[start..end], &self.prev[start..end]);
+                || strip_changed(&rgb[start..end], &self.prev[start..end], w);
             if changed {
                 dirty.push(DirtyStrip {
                     index,
@@ -163,21 +171,31 @@ impl Default for ScanCache {
     }
 }
 
-/// True when `now` differs from `base` in more than [`CHANGE_FRACTION`] of its
-/// bytes. Stops early once the threshold is crossed, so a genuinely changed strip
-/// is cheap to classify; only unchanged strips are scanned in full.
-fn strip_changed(now: &[u8], base: &[u8]) -> bool {
-    let threshold = ((now.len() as f64) * CHANGE_FRACTION) as usize;
-    let mut changed = 0usize;
-    for (a, b) in now.iter().zip(base.iter()) {
-        if a != b {
-            changed += 1;
-            if changed > threshold {
-                return true;
+/// True when more than [`NOISE_CELLS`] cells of the strip changed, where a cell
+/// changed means more than [`CELL_CHANGE_FRACTION`] of its pixels differ. `width`
+/// is the strip's pixel width (its height is inferred from the slice length).
+fn strip_changed(now: &[u8], base: &[u8], width: usize) -> bool {
+    if width == 0 {
+        return now != base;
+    }
+    let row_bytes = width * 3;
+    let height = now.len() / row_bytes;
+    let cols = width.div_ceil(CELL);
+    let rows = height.div_ceil(CELL);
+    let mut changed_px = vec![0u32; cols * rows];
+    for y in 0..height {
+        let cell_row = (y / CELL) * cols;
+        let row = y * row_bytes;
+        for x in 0..width {
+            let i = row + x * 3;
+            if now[i] != base[i] || now[i + 1] != base[i + 1] || now[i + 2] != base[i + 2] {
+                changed_px[cell_row + x / CELL] += 1;
             }
         }
     }
-    false
+    let cell_threshold = ((CELL * CELL) as f64 * CELL_CHANGE_FRACTION) as u32;
+    let changed_cells = changed_px.iter().filter(|&&c| c > cell_threshold).count();
+    changed_cells > NOISE_CELLS
 }
 
 #[cfg(test)]
@@ -202,51 +220,62 @@ mod tests {
         dirty.len()
     }
 
+    const W: i32 = 1000;
+    const H: i32 = 400;
+
     #[test]
     fn first_scan_marks_every_strip_dirty() {
         let mut c = ScanCache::new();
-        assert_eq!(scan(&mut c, &rgb(100, 400), 100, 400, 4, 20), 4);
+        assert_eq!(scan(&mut c, &rgb(W, H), W, H, 4, 20), 4);
     }
 
     #[test]
     fn unchanged_screen_is_all_clean() {
         let mut c = ScanCache::new();
-        let buf = rgb(100, 400);
-        scan(&mut c, &buf, 100, 400, 4, 20);
-        assert_eq!(scan(&mut c, &buf, 100, 400, 4, 20), 0, "nothing changed");
+        let buf = rgb(W, H);
+        scan(&mut c, &buf, W, H, 4, 20);
+        assert_eq!(scan(&mut c, &buf, W, H, 4, 20), 0, "nothing changed");
         assert_eq!(c.all_words().len(), 4, "cached words are kept");
     }
 
     #[test]
-    fn tiny_change_is_ignored() {
+    fn tiny_localised_change_is_ignored() {
         let mut c = ScanCache::new();
-        let buf = rgb(100, 400);
-        scan(&mut c, &buf, 100, 400, 4, 0);
-        // Flip a handful of bytes (a "caret"): well under CHANGE_FRACTION.
+        let buf = rgb(W, H);
+        scan(&mut c, &buf, W, H, 4, 0);
+        // Flip a caret-sized blob and a clock-sized blob in strip 1 (rows
+        // 100..200): two small cells, which must read as noise.
         let mut tweaked = buf.clone();
-        for i in 0..10 {
-            tweaked[100 * 3 * 100 + i] ^= 0xff; // somewhere in strip 1
+        let row_bytes = W as usize * 3;
+        for dx in 0..3 {
+            // ~3px "caret" near the left
+            tweaked[110 * row_bytes + dx * 3] ^= 0xff;
+        }
+        for y in 120..150 {
+            for x in 500..520 {
+                // ~20x30px "clock digit" mid-strip
+                tweaked[y * row_bytes + x * 3] ^= 0xff;
+            }
         }
         assert_eq!(
-            scan(&mut c, &tweaked, 100, 400, 4, 0),
+            scan(&mut c, &tweaked, W, H, 4, 0),
             0,
-            "a few changed pixels must not dirty a strip"
+            "a caret and a clock digit must not dirty the strip"
         );
     }
 
     #[test]
     fn real_change_dirties_only_its_strip() {
         let mut c = ScanCache::new();
-        let buf = rgb(100, 400);
-        scan(&mut c, &buf, 100, 400, 4, 0);
-        // Rewrite a big chunk of strip 1's rows (a real edit).
+        let buf = rgb(W, H);
+        scan(&mut c, &buf, W, H, 4, 0);
+        // Rewrite all of strip 1's rows (a scroll / new content).
         let mut tweaked = buf.clone();
-        let strip1 = 100 * 3 * 100;
-        let strip2 = 100 * 3 * 200;
-        for b in &mut tweaked[strip1..strip2] {
+        let row_bytes = W as usize * 3;
+        for b in &mut tweaked[100 * row_bytes..200 * row_bytes] {
             *b = b.wrapping_add(123);
         }
-        let dirty = c.diff(&tweaked, 100, 400, 4, 0);
+        let dirty = c.diff(&tweaked, W, H, 4, 0);
         assert_eq!(dirty.len(), 1);
         assert_eq!(dirty[0].index, 1);
     }
@@ -254,9 +283,9 @@ mod tests {
     #[test]
     fn resizing_rebuilds_the_grid() {
         let mut c = ScanCache::new();
-        scan(&mut c, &rgb(100, 400), 100, 400, 4, 20);
+        scan(&mut c, &rgb(W, H), W, H, 4, 20);
         assert_eq!(
-            scan(&mut c, &rgb(120, 600), 120, 600, 4, 20),
+            scan(&mut c, &rgb(1200, 600), 1200, 600, 4, 20),
             4,
             "new size starts cold"
         );
