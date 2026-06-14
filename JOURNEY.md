@@ -107,8 +107,13 @@ the systems modules together; `daemon` drives `session`.
 ### Phase 2 — Overlay
 
 - **§2.1 Overlay window** → `x11/overlay.rs`. 32-bit ARGB visual + colormap,
-  `override_redirect` so the WM ignores it, keyboard grab while shown. The
-  transparency relies on a running compositor.
+  `override_redirect` so the WM ignores it, keyboard grab while shown. The first
+  cut relied on a running compositor to blend the transparent pixels — with none
+  you got a black screen with floating labels and no sense of *where* a jump
+  would land. So the renderer now paints a frozen snapshot of the desktop (which
+  it already captured for OCR — see `render::screen_backdrop`) as an opaque
+  backdrop, dimmed by `hints.dim`. The overlay is usable with no compositor; a
+  compositor, if present, still shows the live desktop through the alpha.
 - **§2.2 Hint rendering** → `render/mod.rs` + `render/palette.rs`. **Key
   decision:** I draw with cairo into an in-memory `ImageSurface` and upload the
   bytes to the window with `PutImage`, instead of using a cairo-xcb surface. That
