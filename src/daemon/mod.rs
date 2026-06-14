@@ -64,17 +64,35 @@ impl Daemon {
             Arc::clone(&self.interaction_active),
         );
 
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    if let Err(e) = self.handle_client(&conn, stream) {
-                        log::warn!("client handling error: {e}");
-                    }
+        loop {
+            let (stream, _) = match listener.accept() {
+                Ok(pair) => pair,
+                Err(e) => {
+                    log::warn!("accept failed: {e}");
+                    continue;
                 }
-                Err(e) => log::warn!("accept failed: {e}"),
+            };
+            if let Err(e) = self.handle_client(&conn, stream) {
+                log::warn!("client handling error: {e}");
             }
+            // Triggers spammed while we were busy piled up in the socket backlog;
+            // a hint runs one at a time, so discard them rather than replay each
+            // as another overlay.
+            self.drain_pending(&listener);
         }
-        Ok(())
+    }
+
+    /// Reject every connection currently queued in the backlog. Called right
+    /// after an interaction, so a burst of triggers sent while it was on screen
+    /// doesn't pop the overlay back up once per queued trigger.
+    fn drain_pending(&self, listener: &UnixListener) {
+        if listener.set_nonblocking(true).is_err() {
+            return;
+        }
+        while let Ok((mut stream, _)) = listener.accept() {
+            let _ = writeln!(stream, "busy: a mole interaction was already in progress");
+        }
+        let _ = listener.set_nonblocking(false);
     }
 
     /// Create the listening socket, clearing any stale one left by a crash.
