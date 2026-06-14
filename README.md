@@ -201,6 +201,7 @@ language = "eng"               # tesseract language
 min_confidence = 50.0          # drop shaky guesses (0–100)
 max_word_gap = 1.0             # how readily words merge into one phrase
 line_tolerance = 0.5           # how strict "same line" is
+tiles = 4                      # parallel OCR strips — scan speed (see below)
 
 [hints]
 background = [255, 220, 90, 230]   # RGBA
@@ -210,6 +211,11 @@ font_size = 13.0
 `max_word_gap` and `line_tolerance` are the scan "sensitivity": raise
 `max_word_gap` for longer phrases and fewer hints, lower it for more, shorter
 targets.
+
+OCR is the slow part of a hint. Because Tesseract is single-threaded per image,
+mole splits the screen into `tiles` horizontal strips and scans them in parallel
+— on a multi-core machine `tiles = 4` roughly halves the wait on a wide display.
+Set `tiles = 1` to disable it.
 
 ## How it works
 

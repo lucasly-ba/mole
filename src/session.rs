@@ -19,7 +19,7 @@ use crate::geometry::Point;
 use crate::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
 use crate::interaction;
 use crate::motion::{Accelerator, Dir};
-use crate::render::Renderer;
+use crate::render::{Backdrop, Renderer};
 use crate::x11::connection::KeyInput;
 use crate::x11::overlay::{Overlay, OverlayInput};
 use crate::x11::{Button, Conn, Pointer};
@@ -56,13 +56,20 @@ impl<'a> Session<'a> {
     /// *before* any synthetic click/drag, so the input lands on the app below
     /// rather than on our own window.
     pub fn run_hint(&self, mode: Mode) -> Result<()> {
+        let t0 = std::time::Instant::now();
         let screen = Screen::capture_full(self.conn)?;
+        let t_cap = t0.elapsed();
         let elements = self.detector.detect(&screen)?;
+        log::info!(
+            "scan: capture {}ms + ocr {}ms -> {} elements",
+            t_cap.as_millis(),
+            (t0.elapsed() - t_cap).as_millis(),
+            elements.len(),
+        );
         if elements.is_empty() {
             log::info!("no hintable elements found");
             return Ok(());
         }
-        log::info!("hinting {} elements", elements.len());
 
         let labels = generate_labels(&self.config.hint_alphabet(), elements.len());
         let boxes = place_hints(
@@ -74,18 +81,28 @@ impl<'a> Session<'a> {
         );
 
         let mut overlay = Overlay::new(self.conn)?;
+
+        // Build the desktop backdrop while the overlay is still unmapped: it is a
+        // per-pixel pass over the whole screen, so doing it before `show` keeps
+        // the window from flashing black before the first frame lands. It is then
+        // reused for every repaint instead of being rebuilt per keystroke.
+        let backdrop =
+            self.renderer
+                .backdrop(overlay.width() as i32, overlay.height() as i32, &screen)?;
         overlay.show()?;
 
         // Gather the target(s) for the mode while the overlay owns the keyboard.
         let targets = match mode {
-            Mode::Teleport | Mode::Click { .. } => match self.select(&overlay, &boxes, &screen)? {
-                Some(t) => vec![t],
-                None => vec![],
-            },
+            Mode::Teleport | Mode::Click { .. } => {
+                match self.select(&overlay, &backdrop, &boxes, &screen)? {
+                    Some(t) => vec![t],
+                    None => vec![],
+                }
+            }
             Mode::Drag { .. } => {
                 let mut ts = Vec::new();
-                if let Some(start) = self.select(&overlay, &boxes, &screen)? {
-                    if let Some(end) = self.select(&overlay, &boxes, &screen)? {
+                if let Some(start) = self.select(&overlay, &backdrop, &boxes, &screen)? {
+                    if let Some(end) = self.select(&overlay, &backdrop, &boxes, &screen)? {
                         ts.push(start);
                         ts.push(end);
                     }
@@ -129,13 +146,14 @@ impl<'a> Session<'a> {
     fn select(
         &self,
         overlay: &Overlay,
+        backdrop: &Backdrop,
         boxes: &[HintBox],
         screen: &Screen,
     ) -> Result<Option<Point>> {
         let labels: Vec<String> = boxes.iter().map(|b| b.label.clone()).collect();
         let mut matcher = HintMatcher::new(labels);
 
-        self.repaint(overlay, boxes, screen, matcher.typed())?;
+        self.repaint(overlay, backdrop, boxes, screen, matcher.typed())?;
 
         loop {
             match overlay.next_input()? {
@@ -143,13 +161,13 @@ impl<'a> Session<'a> {
                 OverlayInput::Click(_) => return Ok(None),
                 OverlayInput::Key(KeyInput::Backspace) => {
                     matcher.pop();
-                    self.repaint(overlay, boxes, screen, matcher.typed())?;
+                    self.repaint(overlay, backdrop, boxes, screen, matcher.typed())?;
                 }
                 OverlayInput::Key(KeyInput::Char(c)) => {
                     match matcher.push(c.to_ascii_lowercase()) {
                         MatchState::Selected(idx) => return Ok(Some(boxes[idx].target)),
                         MatchState::Pending => {
-                            self.repaint(overlay, boxes, screen, matcher.typed())?;
+                            self.repaint(overlay, backdrop, boxes, screen, matcher.typed())?;
                         }
                         MatchState::NoMatch => { /* dead end: ignore the key */ }
                     }
@@ -162,17 +180,12 @@ impl<'a> Session<'a> {
     fn repaint(
         &self,
         overlay: &Overlay,
+        backdrop: &Backdrop,
         boxes: &[HintBox],
         screen: &Screen,
         typed: &str,
     ) -> Result<()> {
-        let frame = self.renderer.render(
-            overlay.width() as i32,
-            overlay.height() as i32,
-            boxes,
-            typed,
-            screen,
-        )?;
+        let frame = self.renderer.render_onto(backdrop, boxes, typed, screen)?;
         overlay.present(&frame.data, frame.stride)
     }
 

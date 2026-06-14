@@ -115,6 +115,11 @@ pub struct Ocr {
     /// How strict "same line" is: two words share a line when their vertical
     /// centres differ by at most this fraction of their text height.
     pub line_tolerance: f64,
+    /// How many horizontal strips to split the screen into and OCR in parallel.
+    /// Tesseract is single-threaded per image, so on a multi-core machine this
+    /// is the biggest speed lever — `4` roughly halves scan time on a wide
+    /// display. `1` disables tiling (one pass over the whole screen).
+    pub tiles: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -173,6 +178,7 @@ impl Default for Ocr {
             min_element_size: 6,
             max_word_gap: 1.0,
             line_tolerance: 0.5,
+            tiles: 4,
         }
     }
 }
@@ -260,6 +266,9 @@ impl Config {
             return Err(Error::Config(
                 "ocr.max_word_gap and ocr.line_tolerance must be positive".into(),
             ));
+        }
+        if self.ocr.tiles < 1 {
+            return Err(Error::Config("ocr.tiles must be at least 1".into()));
         }
         Ok(())
     }
