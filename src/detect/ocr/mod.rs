@@ -71,36 +71,35 @@ impl OcrDetector {
 
     /// Capture-to-words, re-reading only the strips that changed since last scan.
     /// Returns the (deduplicated) words across the whole screen.
+    ///
+    /// The cache lock is held across the whole scan, so the on-demand hint and
+    /// the background pre-warm never OCR at the same time (which would
+    /// oversubscribe the cores and make both slower). A hint that arrives during
+    /// a pre-warm waits for it, then finds the cache already fresh.
     fn scan(&self, screen: &Screen, region: Rect) -> Result<Vec<Word>> {
         let width = screen.width();
         let height = screen.height();
         let rgb = screen.to_rgb();
 
-        // Decide what changed under the lock, then OCR without holding it so an
-        // on-demand hint and the background pre-warm don't serialise on each other.
-        let dirty = {
-            let mut cache = self.cache.lock().unwrap();
-            cache.diff(&rgb, width, height, self.tiles, TILE_OVERLAP)
-        };
-        log::info!("cache: {} strips changed, re-reading them", dirty.len());
-        let fresh = self.ocr_strips(&rgb, width, region, &dirty)?;
-
         let mut cache = self.cache.lock().unwrap();
-        for (index, hash, words) in fresh {
-            cache.store(index, hash, words);
+        let dirty = cache.diff(&rgb, width, height, self.tiles, TILE_OVERLAP);
+        log::debug!("cache: {}/{} strips changed", dirty.len(), self.tiles);
+        let fresh = self.ocr_strips(&rgb, width, region, &dirty)?;
+        for (index, words) in fresh {
+            cache.store(index, words);
         }
         Ok(dedup_words(cache.all_words()))
     }
 
     /// OCR the given dirty strips in parallel, capping each process's threads so
-    /// they don't oversubscribe the cores. Returns `(strip index, hash, words)`.
+    /// they don't oversubscribe the cores. Returns `(strip index, words)`.
     fn ocr_strips(
         &self,
         rgb: &[u8],
         width: i32,
         region: Rect,
         dirty: &[DirtyStrip],
-    ) -> Result<Vec<(usize, u64, Vec<Word>)>> {
+    ) -> Result<Vec<(usize, Vec<Word>)>> {
         if dirty.is_empty() {
             return Ok(Vec::new());
         }
@@ -113,11 +112,11 @@ impl OcrDetector {
             let handles: Vec<_> = dirty
                 .iter()
                 .map(|&d| {
-                    scope.spawn(move || -> Result<(usize, u64, Vec<Word>)> {
+                    scope.spawn(move || -> Result<(usize, Vec<Word>)> {
                         let ppm = tesseract::encode_ppm_band(rgb, width, d.y0, d.h);
                         let raw = tess.run(ppm, threads)?;
                         let band = Rect::new(region.x, region.y + d.y0, width, d.h);
-                        Ok((d.index, d.new_hash, tsv::parse(&raw, band, min_conf)))
+                        Ok((d.index, tsv::parse(&raw, band, min_conf)))
                     })
                 })
                 .collect();
