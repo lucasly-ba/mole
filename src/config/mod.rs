@@ -120,6 +120,11 @@ pub struct Ocr {
     /// is the biggest speed lever — `4` roughly halves scan time on a wide
     /// display. `1` disables tiling (one pass over the whole screen).
     pub tiles: usize,
+    /// Keep the OCR cache warm in the background: watch the screen (X DAMAGE) and
+    /// re-read changed strips once it settles, so a hint usually finds nothing to
+    /// re-scan and appears instantly. Costs a little CPU when the screen changes;
+    /// set `false` to OCR only on demand.
+    pub prewarm: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -179,6 +184,7 @@ impl Default for Ocr {
             max_word_gap: 1.0,
             line_tolerance: 0.5,
             tiles: 4,
+            prewarm: true,
         }
     }
 }

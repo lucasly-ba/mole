@@ -10,7 +10,6 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::capture::Screen;
 use crate::error::{Error, Result};
 
 /// A configured handle to the OCR binary. Cheap to clone/rebuild on config
@@ -24,12 +23,6 @@ pub struct Tesseract {
 impl Tesseract {
     pub fn new(binary: String, language: String) -> Self {
         Tesseract { binary, language }
-    }
-
-    /// Read the whole `screen` and return Tesseract's raw TSV output.
-    pub fn read(&self, screen: &Screen) -> Result<String> {
-        let ppm = encode_ppm(screen);
-        self.run(ppm, 0)
     }
 
     /// Run the OCR binary, feeding `ppm` on stdin and returning the TSV stdout.
@@ -78,17 +71,6 @@ impl Tesseract {
         String::from_utf8(output.stdout)
             .map_err(|e| Error::Ocr(format!("tesseract produced non-UTF8 TSV: {e}")))
     }
-}
-
-/// Encode a screen capture as a binary PPM (P6) for Tesseract/leptonica: a tiny
-/// header followed by the tight RGB bytes.
-fn encode_ppm(screen: &Screen) -> Vec<u8> {
-    let (w, h) = (screen.width(), screen.height());
-    let body = screen.to_rgb();
-    let mut out = Vec::with_capacity(16 + body.len());
-    out.extend_from_slice(format!("P6\n{w} {h}\n255\n").as_bytes());
-    out.extend_from_slice(&body);
-    out
 }
 
 /// Encode rows `[y0, y0 + height)` of a tight, full-width RGB buffer as a PPM —

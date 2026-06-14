@@ -202,6 +202,7 @@ min_confidence = 50.0          # drop shaky guesses (0–100)
 max_word_gap = 1.0             # how readily words merge into one phrase
 line_tolerance = 0.5           # how strict "same line" is
 tiles = 4                      # parallel OCR strips — scan speed (see below)
+prewarm = true                 # keep the OCR cache warm in the background
 
 [hints]
 background = [255, 220, 90, 230]   # RGBA
@@ -212,10 +213,22 @@ font_size = 13.0
 `max_word_gap` for longer phrases and fewer hints, lower it for more, shorter
 targets.
 
-OCR is the slow part of a hint. Because Tesseract is single-threaded per image,
-mole splits the screen into `tiles` horizontal strips and scans them in parallel
-— on a multi-core machine `tiles = 4` roughly halves the wait on a wide display.
-Set `tiles = 1` to disable it.
+OCR is the slow part of a hint. Three things make it fast:
+
+- **Parallel tiling** — Tesseract is single-threaded per image, so mole splits
+  the screen into `tiles` horizontal strips and scans them in parallel. On a
+  multi-core machine `tiles = 4` roughly halves the wait on a wide display
+  (`tiles = 1` disables it).
+- **Incremental cache** — the daemon remembers each strip and re-reads only the
+  ones whose pixels actually changed since the last hint, so a hint on a screen
+  you've been looking at does little or no OCR. Tiny changes (a blinking caret, a
+  ticking clock) are ignored so the cache stays warm.
+- **Background pre-warm** (`prewarm = true`) — a background thread watches the
+  screen (via X DAMAGE) and refreshes the cache once it settles, so the scan is
+  usually already done before you trigger and the hints appear instantly. It
+  costs a little CPU while the screen is changing and stands down while a hint is
+  on screen; set `prewarm = false` for purely on-demand scanning with no idle
+  cost. Moving the mouse never triggers it (the cursor isn't part of the capture).
 
 ## How it works
 

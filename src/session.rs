@@ -11,9 +11,11 @@
 //! Free pointer movement (Plan §1.3, hjkl) is [`Session::run_free_move`], which
 //! needs no detection or hints at all.
 
+use std::sync::{Arc, Mutex};
+
 use crate::capture::Screen;
 use crate::config::Config;
-use crate::detect::{self, Detector};
+use crate::detect::{self, Detector, ScanCache};
 use crate::error::Result;
 use crate::geometry::Point;
 use crate::hint::{generate_labels, place_hints, HintBox, HintMatcher, MatchState};
@@ -41,11 +43,11 @@ pub struct Session<'a> {
 }
 
 impl<'a> Session<'a> {
-    pub fn new(conn: &'a Conn, config: &'a Config) -> Result<Self> {
+    pub fn new(conn: &'a Conn, config: &'a Config, cache: Arc<Mutex<ScanCache>>) -> Result<Self> {
         Ok(Session {
             conn,
             config,
-            detector: detect::from_config(config),
+            detector: detect::from_config(config, cache),
             renderer: Renderer::new(config.hints.clone()),
         })
     }

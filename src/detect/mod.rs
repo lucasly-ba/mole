@@ -14,6 +14,10 @@
 
 pub mod ocr;
 
+use std::sync::{Arc, Mutex};
+
+pub use ocr::ScanCache;
+
 use crate::capture::Screen;
 use crate::config::Config;
 use crate::error::Result;
@@ -47,11 +51,11 @@ pub trait Detector {
     fn name(&self) -> &'static str;
 }
 
-/// Build the detector described by `config`. mole is OCR-only, so this is always
-/// the OCR backend; the indirection keeps `session` agnostic of which detector
-/// it drives.
-pub fn from_config(config: &Config) -> Box<dyn Detector> {
-    Box::new(ocr::OcrDetector::new(config))
+/// Build the detector described by `config`, sharing `cache` so OCR results
+/// survive across hints. mole is OCR-only, so this is always the OCR backend;
+/// the indirection keeps `session` agnostic of which detector it drives.
+pub fn from_config(config: &Config, cache: Arc<Mutex<ScanCache>>) -> Box<dyn Detector> {
+    Box::new(ocr::OcrDetector::new(config, cache))
 }
 
 /// Post-process a raw element list into what the hint pipeline expects: drop

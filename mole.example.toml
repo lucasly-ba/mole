@@ -65,6 +65,11 @@ line_tolerance = 0.5
 # biggest speed lever — 4 roughly halves scan time on a wide display. Set to 1
 # to disable tiling (a single pass over the whole screen).
 tiles = 4
+# Keep the OCR cache warm in the background: watch the screen (X DAMAGE) and
+# re-read only the strips that change, once it settles. A hint on a screen you've
+# been looking at then needs no OCR and appears instantly. Costs a little CPU
+# while the screen is changing; set false to OCR purely on demand.
+prewarm = true
 
 [daemon]
 # Unix socket the daemon listens on. The CLI talks to it over this socket.

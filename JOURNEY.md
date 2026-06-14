@@ -144,6 +144,24 @@ Detection is OCR, end to end, split into small single-purpose steps under
   about half the detected words. Strips overlap by `TILE_OVERLAP` so a line on a
   cut survives; the duplicates that creates are removed by `dedup_words` (same
   text + heavily overlapping box, keeping the fuller one) before grouping.
+  **Caching + pre-warm** → `ocr/cache.rs` + `daemon/prewarm.rs`. Even halved, a
+  full scan is too slow to do on every hint, and most hints land on a screen that
+  barely changed. So those same strips double as a change cache: the daemon owns
+  one `ScanCache`, and each scan only re-OCRs strips whose pixels changed since
+  last time, reusing cached words for the rest — a hint on a static screen does
+  no OCR at all. Crucially the change test is by *magnitude*, not an exact hash:
+  a blinking caret or a ticking clock flips a handful of pixels and must be
+  ignored, or a dense strip would never stay clean (an exact hash made the cache
+  churn constantly in testing). On top of that, a background thread watches the
+  whole screen with the X DAMAGE extension and re-reads changed strips once the
+  screen settles, so the cache is usually already current when you trigger — the
+  hint then appears with no scan at all. DAMAGE works here even with no
+  compositor (verified by probe), and reports drawing only, not pointer motion,
+  so moving the mouse never wakes it. The whole scan holds the cache lock so the
+  on-demand hint and the background warm never OCR at once (which would
+  oversubscribe the cores); pre-warm also stands down while an interaction owns
+  the screen, so it never captures mole's own overlay. `ocr.prewarm = false`
+  turns the background thread off for a purely on-demand, zero-idle-cost mode.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.

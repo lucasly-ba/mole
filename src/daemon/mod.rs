@@ -9,15 +9,18 @@
 //! one at a time on the main thread because they own the keyboard/overlay.
 
 pub mod ipc;
+mod prewarm;
 
 pub use ipc::Command;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::{Config, ConfigWatcher};
+use crate::detect::ScanCache;
 use crate::error::{Error, Result};
 use crate::session::Session;
 use crate::x11::Conn;
@@ -27,6 +30,12 @@ pub struct Daemon {
     config: Arc<Mutex<Config>>,
     config_path: PathBuf,
     socket_path: PathBuf,
+    /// OCR cache shared across hints and the background pre-warm, so a hint on a
+    /// mostly-unchanged screen re-reads only what moved.
+    scan_cache: Arc<Mutex<ScanCache>>,
+    /// Set while a hint/move interaction owns the screen, so the pre-warmer holds
+    /// off (its capture would otherwise contain our own overlay).
+    interaction_active: Arc<AtomicBool>,
 }
 
 impl Daemon {
@@ -37,6 +46,8 @@ impl Daemon {
             config: Arc::new(Mutex::new(config)),
             config_path,
             socket_path,
+            scan_cache: Arc::new(Mutex::new(ScanCache::new())),
+            interaction_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -47,6 +58,11 @@ impl Daemon {
         log::info!("daemon listening on {:?}", self.socket_path);
 
         self.spawn_config_watcher();
+        prewarm::spawn(
+            Arc::clone(&self.config),
+            Arc::clone(&self.scan_cache),
+            Arc::clone(&self.interaction_active),
+        );
 
         for stream in listener.incoming() {
             match stream {
@@ -82,6 +98,7 @@ impl Daemon {
     fn spawn_config_watcher(&self) {
         let path = self.config_path.clone();
         let shared = Arc::clone(&self.config);
+        let cache = Arc::clone(&self.scan_cache);
         std::thread::spawn(move || {
             let watcher = match ConfigWatcher::new(&path) {
                 Ok(w) => w,
@@ -92,7 +109,11 @@ impl Daemon {
             };
             loop {
                 match watcher.next_reload() {
-                    Ok(Some(cfg)) => *shared.lock().unwrap() = cfg,
+                    Ok(Some(cfg)) => {
+                        *shared.lock().unwrap() = cfg;
+                        // OCR params may have changed; force a fresh read.
+                        cache.lock().unwrap().invalidate();
+                    }
                     Ok(None) => {} // parse error already logged; keep current
                     Err(e) => {
                         log::warn!("config watcher stopped: {e}");
@@ -130,18 +151,26 @@ impl Daemon {
         if let Command::Reload = cmd {
             let cfg = Config::load(&self.config_path)?;
             *self.config.lock().unwrap() = cfg;
+            // OCR params may have changed; drop cached words so they're re-read.
+            self.scan_cache.lock().unwrap().invalidate();
             log::info!("config reloaded on request");
             return Ok(());
         }
 
         // Snapshot the config so a mid-interaction reload can't change it.
         let cfg = self.config.lock().unwrap().clone();
-        let session = Session::new(conn, &cfg)?;
-        match cmd {
+        let session = Session::new(conn, &cfg, Arc::clone(&self.scan_cache))?;
+
+        // Tell the pre-warmer to hold off while we own the screen, so it doesn't
+        // capture (and cache) our own overlay.
+        self.interaction_active.store(true, Ordering::SeqCst);
+        let result = match cmd {
             Command::Hint(mode) => session.run_hint(mode),
             Command::FreeMove => session.run_free_move(),
             Command::Reload | Command::Ping => unreachable!("handled above"),
-        }
+        };
+        self.interaction_active.store(false, Ordering::SeqCst);
+        result
     }
 }
 
