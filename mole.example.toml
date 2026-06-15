@@ -10,7 +10,9 @@
 # characters of the alphabet are assigned to the top-left elements.
 hint_alphabet = "asdfghjkl"
 
-# Directional movement keys for the free-move (hjkl) mode.
+# Directional movement keys for `mole move`. Default to hjkl; set them to any
+# keys you prefer (letters or punctuation), e.g. "l", ";", "'", "\\". Holding
+# Shift gives the large step with any of these keys.
 move_left = "h"
 move_down = "j"
 move_up = "k"
