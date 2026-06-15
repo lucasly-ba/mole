@@ -1,5 +1,5 @@
 {
-  description = "mole — keyboard-only mouse navigation for Linux/X11 (Vimium-style hints via AT-SPI + OCR)";
+  description = "mole — keyboard-only mouse navigation for Linux/X11 (Vimium-style hints via OCR)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -23,9 +23,10 @@
           pkgs.glib
         ];
 
-        # Runtime tools that are looked up by name (not linked). Tesseract powers
-        # the optional OCR fallback; the X libraries help when running on a real
-        # display. None of these are required to *build* the crate.
+        # Runtime tools that are looked up by name (not linked). Tesseract is the
+        # OCR engine mole shells out to (a hard runtime requirement); the X
+        # libraries help when running on a real display. None of these are
+        # required to *build* the crate.
         runtimeTools = [
           pkgs.tesseract
           pkgs.libx11

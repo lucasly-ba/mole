@@ -344,10 +344,10 @@ cargo install --path .     # build release + put `mole` on your PATH (~/.cargo/b
 mole daemon &              # then bind `mole click` etc. in your WM
 ```
 
-See the README's [Install](README.md#install) section for the per-distro
-dependency packages and the `PATH` one-liner. To *use* mole, get the binary onto
-your `PATH` (via `cargo install` or by copying `target/release/mole` somewhere on
-it) rather than calling it through `./target` each time.
+See the README's [Installation](README.md#installation) section for the short
+version. To *use* mole, get the binary onto your `PATH` (via `cargo install` or by
+copying `target/release/mole` somewhere on it) rather than calling it through
+`./target` each time.
 
 **Nix.** A flake is kept for reproducibility and CI. `nix develop` gives a dev
 shell with the toolchain, cairo and tesseract pre-wired (and a `mole` helper that

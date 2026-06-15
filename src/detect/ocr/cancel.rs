@@ -81,7 +81,11 @@ impl Cancel {
 
     /// Drop a child from the kill set once it has exited.
     pub(super) fn unregister(&self, id: u64) {
-        self.inner.children.lock().unwrap().retain(|(i, _)| *i != id);
+        self.inner
+            .children
+            .lock()
+            .unwrap()
+            .retain(|(i, _)| *i != id);
     }
 }
 
