@@ -269,11 +269,11 @@ A subtlety that bit the first draft: the overlay must be **torn down before** th
 synthetic click, or the click lands on our own window. `run_hint` now collects
 the target(s) while the overlay is up, hides it, *then* acts.
 
-- **§4.3 Teleport-then-move** → `session.rs`. After a `Mode::Teleport` lands the
-  pointer, `run_hint` optionally hands straight off to `run_free_move`, so the
-  pointer can be nudged into place with the keyboard without a second trigger
-  (config `movement.teleport_then_move`, on by default). Click and drag don't —
-  by then you've already acted on the target.
+- **§4.3 Teleport is a clean jump.** An earlier version handed off from a
+  teleport straight into free-move (`movement.teleport_then_move`) so the pointer
+  could be nudged after landing. It was removed: a teleport should just teleport —
+  predictable, no lingering keyboard grab. Fine-tuning lives in `mole move`, which
+  you trigger when you actually want it.
 
 ### Phase 5 — Config & daemon
 

@@ -131,13 +131,6 @@ impl<'a> Session<'a> {
             let _ = handle.join();
         }
         act_result?;
-
-        // After a teleport, optionally hand off to free-move so the pointer can
-        // be nudged into place with the keyboard without a second trigger.
-        if matches!(mode, Mode::Teleport) && self.config.movement.teleport_then_move {
-            drop(overlay); // release the hint overlay before free-move makes its own
-            self.run_free_move()?;
-        }
         Ok(())
     }
 
