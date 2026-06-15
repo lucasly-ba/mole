@@ -203,19 +203,22 @@ Detection is OCR, end to end, split into small single-purpose steps under
   zero-idle-cost mode.
 
   Finally, even when something *did* change, a hint needn't wait for it.
-  `Detector::detect_split` returns the cached words for the unchanged part of the
-  screen **immediately**, plus a closure that re-OCRs the changed bands. The
-  session (`select_incremental`) shows the ready hints at once, runs the closure
-  on a worker thread, and folds the late hints in when they arrive — placed
-  around the existing ones, with labels drawn from a reserved pool so the labels
-  already on screen never shift (and a key already typed is replayed onto the
-  larger set). So a hint over a screen with one busy corner appears instantly for
-  everything else, and the corner's hints pop in a fraction of a second later.
-  This split only applies to *localised* change: when the changed bands cover
-  more than half the screen (a fresh window, a workspace switch) there's no
-  meaningful cached part to show, and a half-filled overlay just looks broken —
-  so `detect_split` re-reads the whole thing up front and shows the complete set
-  at once instead of dribbling it in.
+  `Detector::detect_split` returns **every** cached word immediately — including
+  the ones inside the changed bands, at their last-known positions — plus a
+  closure that re-OCRs those bands. The insight: sweeping the mouse repaints the
+  links and buttons under it (hover highlights), which flags those bands as
+  "changed" even though the *text* didn't move; showing the cached hint there is
+  instantly correct. The session (`select_incremental`) shows the ready hints at
+  once, runs the closure on a worker thread, and folds in only the words that
+  weren't already on screen (`already_shown` — same text, near-identical position)
+  — so a merely-repainted region adds nothing and never flickers, while genuinely
+  new text pops in a fraction of a second later. Late hints are placed around the
+  existing ones with labels drawn from a reserved pool, so on-screen labels never
+  shift (and a key already typed is replayed onto the larger set). This split only
+  applies to *localised* change: when the changed bands cover **more than ~85%**
+  of the screen (a fresh window, a workspace switch) the cache is too stale to be
+  worth showing, so `detect_split` re-reads the whole thing up front and shows the
+  complete, correct set at once instead of a screen full of stale hints.
 
   **Latency, honestly.** To keep the cache current the pre-warm reacts quickly: a
   short settle debounce (`DEBOUNCE`, ~120ms) and an *immediate* re-read of the
