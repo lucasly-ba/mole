@@ -101,10 +101,17 @@ the systems modules together; `daemon` drives `session`.
   hotkey and mole needs no grab of its own. An early `XGrabKey` implementation
   existed but was removed as dead weight once socket triggering proved sufficient.
 - **§1.3 hjkl movement** → `x11/pointer.rs` + `session::run_free_move`, with the
-  step sizing factored into `motion.rs`. Relative warps, configurable keys,
-  normal/large step (Shift → uppercase keysym), and optional hold-to-accelerate:
+  step sizing factored into `motion.rs`. Relative warps, **remappable keys**
+  (`move_left`/`down`/`up`/`right`, default hjkl, any key — letters or
+  punctuation), a normal/large step, and optional hold-to-accelerate:
   `motion::Accelerator` grows the step while a direction repeats and resets when
-  it changes — pure arithmetic, unit-tested away from any X11.
+  it changes — pure arithmetic, unit-tested away from any X11. The large step is
+  Shift, and it works on *any* key: a press is decoded at its **unshifted** level
+  with the Shift state reported alongside (`KeyInput::Char { c, shift }`), so a
+  binding matches its key with or without Shift instead of relying on a letter's
+  case flipping (which left `;`/`'`/`\` with no large step). Free-move paints the
+  same desktop backdrop as the hint overlay — without it the move-mode overlay is
+  a black screen on a compositor-less WM.
 
 ### Phase 2 — Overlay
 
@@ -261,6 +268,12 @@ land top-left.
 A subtlety that bit the first draft: the overlay must be **torn down before** the
 synthetic click, or the click lands on our own window. `run_hint` now collects
 the target(s) while the overlay is up, hides it, *then* acts.
+
+- **§4.3 Teleport-then-move** → `session.rs`. After a `Mode::Teleport` lands the
+  pointer, `run_hint` optionally hands straight off to `run_free_move`, so the
+  pointer can be nudged into place with the keyboard without a second trigger
+  (config `movement.teleport_then_move`, on by default). Click and drag don't —
+  by then you've already acted on the target.
 
 ### Phase 5 — Config & daemon
 
