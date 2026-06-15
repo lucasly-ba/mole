@@ -117,18 +117,28 @@ impl<'a> Session<'a> {
         };
 
         overlay.hide()?;
-        let result = if targets.is_empty() {
+        if targets.is_empty() {
             log::info!("selection cancelled");
-            Ok(())
-        } else {
-            self.act(mode, &targets)
-        };
-        // Make sure the background re-OCR finished (and its cache splice landed)
-        // before returning, so it can't race the next interaction's pre-warm.
+            // Make sure the background re-OCR finished (and its cache splice
+            // landed) before returning, so it can't race the next pre-warm.
+            if let Some(handle) = pending {
+                let _ = handle.join();
+            }
+            return Ok(());
+        }
+        let act_result = self.act(mode, &targets);
         if let Some(handle) = pending {
             let _ = handle.join();
         }
-        result
+        act_result?;
+
+        // After a teleport, optionally hand off to free-move so the pointer can
+        // be nudged into place with the keyboard without a second trigger.
+        if matches!(mode, Mode::Teleport) && self.config.movement.teleport_then_move {
+            drop(overlay); // release the hint overlay before free-move makes its own
+            self.run_free_move()?;
+        }
+        Ok(())
     }
 
     /// Synchronous two-pick drag selection: returns `[start, end]`, or empty if
@@ -374,8 +384,17 @@ impl<'a> Session<'a> {
     /// transparent overlay and moves the pointer until Escape/Enter.
     pub fn run_free_move(&self) -> Result<()> {
         let pointer = Pointer::new(self.conn);
+        let screen = Screen::capture_full(self.conn)?;
         let mut overlay = Overlay::new(self.conn)?;
+        // Paint the desktop snapshot so move mode isn't a black screen when no
+        // compositor is running (same reason the hint overlay does — see
+        // Renderer::backdrop). The hardware cursor rides on top of it.
+        let backdrop =
+            self.renderer
+                .backdrop(overlay.width() as i32, overlay.height() as i32, &screen)?;
         overlay.show()?;
+        let frame = self.renderer.render_onto(&backdrop, &[], "", &screen)?;
+        overlay.present(&frame.data, frame.stride)?;
 
         let m = &self.config.movement;
         let k = &self.config.keys;

@@ -76,6 +76,10 @@ pub struct Movement {
     pub acceleration: f64,
     /// Hard ceiling (px) on a single accelerated step.
     pub max_step: i32,
+    /// After a `teleport` lands the pointer, drop straight into free-move so it
+    /// can be fine-tuned with the keyboard without a second trigger. Set to
+    /// `false` for a plain jump-and-done teleport.
+    pub teleport_then_move: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -155,6 +159,7 @@ impl Default for Movement {
             large_step: 160,
             acceleration: 1.0,
             max_step: 600,
+            teleport_then_move: true,
         }
     }
 }
