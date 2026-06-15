@@ -27,6 +27,9 @@ large_step = 160
 acceleration = 1.0
 # Hard ceiling (px) on a single accelerated step.
 max_step = 600
+# After `mole teleport` lands the pointer, drop into free-move so you can nudge it
+# with the keyboard right away (Esc/Enter to finish). Set false for jump-and-done.
+teleport_then_move = true
 
 [hints]
 # RGBA (0-255). Background of a hint label box.
