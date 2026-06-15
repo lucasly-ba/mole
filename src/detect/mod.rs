@@ -12,6 +12,7 @@
 //! pipeline testable with fakes and leaves room for a future backend (PaddleOCR,
 //! a Wayland screencopy reader, …) without touching the call sites.
 
+pub mod icon;
 pub mod ocr;
 
 use std::sync::{Arc, Mutex};

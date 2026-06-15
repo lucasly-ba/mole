@@ -63,6 +63,8 @@ pub struct OcrDetector {
     /// Whether on-demand hints are per word or per phrase (drag always uses
     /// phrases via [`Detector::detect_phrases`]).
     granularity: Granularity,
+    /// Also hint icon-only clickable regions (no text) found from the pixels.
+    hint_icons: bool,
     tiles: usize,
     cache: Arc<Mutex<ScanCache>>,
     /// Lets another thread kill this detector's in-flight OCR. The on-demand path
@@ -96,6 +98,7 @@ impl OcrDetector {
             } else {
                 Granularity::Phrase
             },
+            hint_icons: config.ocr.hint_icons,
             tiles: config.ocr.tiles.max(1),
             cache,
             cancel,
@@ -137,6 +140,33 @@ impl OcrDetector {
             self.min_element_size,
             region,
         )
+    }
+
+    /// Append icon hints (clickable non-text regions) to already-finalized text
+    /// `els`, found from `rgb`, then re-finalize so everything sorts into one
+    /// reading order. A no-op when `hint_icons` is off.
+    fn with_icons(
+        &self,
+        mut els: Vec<Element>,
+        rgb: &[u8],
+        width: i32,
+        region: Rect,
+    ) -> Vec<Element> {
+        if !self.hint_icons {
+            return els;
+        }
+        let height = if width > 0 {
+            (rgb.len() / 3) as i32 / width
+        } else {
+            0
+        };
+        let icons = detect::icon::detect(rgb, width, height, region, &els, self.min_element_size);
+        log::debug!("icons: {} icon hint(s)", icons.len());
+        if icons.is_empty() {
+            return els;
+        }
+        els.extend(icons);
+        detect::finalize(els, self.min_element_size, region)
     }
 }
 
@@ -204,8 +234,9 @@ impl Detector for OcrDetector {
 
         if bands.is_empty() {
             // Nothing changed — every cached word is current.
+            let ready = self.elements(dedup_words(cached), region);
             return Ok(Scan {
-                ready: self.elements(dedup_words(cached), region),
+                ready: self.with_icons(ready, &rgb, width, region),
                 pending: None,
             });
         }
@@ -242,8 +273,9 @@ impl Detector for OcrDetector {
                 }
                 cache.all_words()
             };
+            let ready = self.elements(dedup_words(all), region);
             return Ok(Scan {
-                ready: self.elements(dedup_words(all), region),
+                ready: self.with_icons(ready, &rgb, width, region),
                 pending: None,
             });
         }
@@ -259,6 +291,7 @@ impl Detector for OcrDetector {
         // correct instantly; this is what makes a hint feel instant even right
         // after the mouse swept over (and repainted) the area.
         let ready = self.elements(dedup_words(cached.clone()), region);
+        let ready = self.with_icons(ready, &rgb, width, region);
 
         // Keep the stale words inside the changed bands so the background pass can
         // tell a genuinely-new word from one already on screen.

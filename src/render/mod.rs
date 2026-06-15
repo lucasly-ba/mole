@@ -124,6 +124,59 @@ impl Renderer {
         self.render_onto(&backdrop, boxes, typed, screen)
     }
 
+    /// Render a small opaque legend bar sized to `text` — a hint-coloured box
+    /// with dark text, used as the free-move on-screen notice. Fully opaque so it
+    /// reads correctly with no compositor; the caller maps it in a small window.
+    pub fn hud(&self, text: &str) -> Result<Frame> {
+        let pad_x = 14.0;
+        let pad_y = 8.0;
+
+        // Measure the text first on a throwaway surface.
+        let probe = ImageSurface::create(Format::ARgb32, 1, 1).map_err(Error::render)?;
+        let (tw, th, x_bearing, y_bearing) = {
+            let ctx = Context::new(&probe).map_err(Error::render)?;
+            ctx.select_font_face(&self.style.font_family, FontSlant::Normal, FontWeight::Bold);
+            ctx.set_font_size(self.style.font_size);
+            let e = ctx.text_extents(text).map_err(Error::render)?;
+            (e.width(), e.height(), e.x_bearing(), e.y_bearing())
+        };
+        let width = (tw + 2.0 * pad_x).ceil() as i32;
+        let height = (th + 2.0 * pad_y).ceil() as i32;
+
+        let mut surface =
+            ImageSurface::create(Format::ARgb32, width, height).map_err(Error::render)?;
+        {
+            let ctx = Context::new(&surface).map_err(Error::render)?;
+            // Opaque hint-coloured background (alpha forced so the corners aren't
+            // transparent-to-black without a compositor).
+            let (br, bgc, bb, _) = self.style.background.as_f64();
+            ctx.set_source_rgba(br, bgc, bb, 1.0);
+            ctx.set_operator(Operator::Source);
+            ctx.paint().map_err(Error::render)?;
+            ctx.set_operator(Operator::Over);
+
+            ctx.select_font_face(&self.style.font_family, FontSlant::Normal, FontWeight::Bold);
+            ctx.set_font_size(self.style.font_size);
+            let (tr, tg, tb, ta) = self.style.foreground.as_f64();
+            ctx.set_source_rgba(tr, tg, tb, ta);
+            ctx.move_to(pad_x - x_bearing, pad_y - y_bearing);
+            ctx.show_text(text).map_err(Error::render)?;
+        }
+
+        surface.flush();
+        let stride = surface.stride() as usize;
+        let data = surface
+            .data()
+            .map_err(|e| Error::Render(format!("cannot access surface data: {e}")))?
+            .to_vec();
+        Ok(Frame {
+            data,
+            stride,
+            width,
+            height,
+        })
+    }
+
     fn draw_box(&self, ctx: &Context, b: &HintBox, typed: &str, screen: &Screen) -> Result<()> {
         let r = b.rect;
         let behind = screen.average_color(r);
@@ -282,6 +335,21 @@ mod tests {
         let with = r.render(100, 100, &[hint("aa")], "z", &screen).unwrap();
         let backdrop_only = r.render(100, 100, &[], "", &screen).unwrap();
         assert_eq!(with.data, backdrop_only.data);
+    }
+
+    #[test]
+    fn hud_is_opaque_and_sized_to_its_text() {
+        let r = Renderer::new(Hints::default());
+        let short = r.hud("MOVE").unwrap();
+        let long = r.hud("MOVE   hjkl or arrows: move  ·  Esc: exit").unwrap();
+        // A longer legend yields a wider bar; both are a single line tall.
+        assert!(long.width > short.width, "bar widens with its text");
+        assert!(short.width > 0 && short.height > 0);
+        assert_eq!(short.data.len(), short.stride * short.height as usize);
+        // Fully opaque so it reads correctly with no compositor.
+        for px in short.data.chunks(4) {
+            assert_eq!(px[3], 255, "hud must be opaque");
+        }
     }
 
     #[test]

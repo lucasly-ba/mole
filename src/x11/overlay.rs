@@ -267,6 +267,114 @@ impl Drop for Overlay<'_> {
     }
 }
 
+/// A small, fixed-position, **non-interactive** overlay window — used for the
+/// free-move notice. Unlike [`Overlay`] it grabs nothing and covers only its own
+/// rectangle, so the live desktop and the pointer stay usable underneath; it just
+/// shows a label so the user knows move mode is active and how to leave it.
+pub struct Hud<'a> {
+    conn: &'a Conn,
+    window: u32,
+    gc: u32,
+    width: u16,
+    height: u16,
+}
+
+impl<'a> Hud<'a> {
+    /// Create and map a `width`×`height` ARGB window at root position `(x, y)`,
+    /// then upload `data` (ARGB32, `stride` bytes per row) into it.
+    pub fn show(
+        conn: &'a Conn,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        data: &[u8],
+        stride: usize,
+    ) -> Result<Self> {
+        let screen = &conn.conn.setup().roots[conn.screen_num];
+        let (depth, visual) = find_argb_visual(screen)
+            .ok_or_else(|| Error::Render("no 32-bit ARGB visual available".into()))?;
+        let colormap = conn.conn.generate_id().map_err(Error::x11)?;
+        conn.conn
+            .create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual)
+            .map_err(Error::x11)?;
+        let window = conn.conn.generate_id().map_err(Error::x11)?;
+        let aux = CreateWindowAux::new()
+            .background_pixel(0)
+            .border_pixel(0)
+            .colormap(colormap)
+            .override_redirect(1)
+            .event_mask(EventMask::EXPOSURE);
+        conn.conn
+            .create_window(
+                depth,
+                window,
+                screen.root,
+                x,
+                y,
+                width,
+                height,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                visual,
+                &aux,
+            )
+            .map_err(Error::x11)?;
+        let gc = conn.conn.generate_id().map_err(Error::x11)?;
+        conn.conn
+            .create_gc(gc, window, &CreateGCAux::new())
+            .map_err(Error::x11)?;
+        conn.conn.free_colormap(colormap).map_err(Error::x11)?;
+        conn.conn.map_window(window).map_err(Error::x11)?;
+
+        let hud = Hud {
+            conn,
+            window,
+            gc,
+            width,
+            height,
+        };
+        hud.present(data, stride)?;
+        Ok(hud)
+    }
+
+    /// Upload an ARGB32 buffer. The HUD is small, so this is a single request.
+    fn present(&self, data: &[u8], stride: usize) -> Result<()> {
+        let tight = self.width as usize * 4;
+        let mut packed = vec![0u8; tight * self.height as usize];
+        for r in 0..self.height as usize {
+            let src = r * stride;
+            let dst = r * tight;
+            packed[dst..dst + tight].copy_from_slice(&data[src..src + tight]);
+        }
+        self.conn
+            .conn
+            .put_image(
+                ImageFormat::Z_PIXMAP,
+                self.window,
+                self.gc,
+                self.width,
+                self.height,
+                0,
+                0,
+                0,
+                32,
+                &packed,
+            )
+            .map_err(Error::x11)?;
+        self.conn.flush()?;
+        Ok(())
+    }
+}
+
+impl Drop for Hud<'_> {
+    fn drop(&mut self) {
+        let _ = self.conn.conn.free_gc(self.gc);
+        let _ = self.conn.conn.destroy_window(self.window);
+        let _ = self.conn.flush();
+    }
+}
+
 /// Find a 32-bit (ARGB) visual on the screen, returning `(depth, visual_id)`.
 fn find_argb_visual(screen: &x11rb::protocol::xproto::Screen) -> Option<(u8, u32)> {
     screen

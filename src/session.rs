@@ -30,7 +30,7 @@ use crate::motion::Glide;
 use crate::render::{Backdrop, Renderer};
 use crate::x11::connection::KeyInput;
 use crate::x11::overlay::{Overlay, OverlayInput};
-use crate::x11::{Button, Conn, KeyboardGrab, Pointer};
+use crate::x11::{Button, Conn, Hud, KeyboardGrab, Pointer};
 
 /// Spare labels reserved beyond the immediately-shown hints, so late-arriving
 /// (background-OCR'd) hints get stable labels without disturbing the ones the
@@ -385,11 +385,15 @@ impl<'a> Session<'a> {
     /// direction is held and a boost key crosses the screen fast; action keys
     /// click, double-click, right-click and drag-select where the pointer rests.
     ///
-    /// No overlay is shown — the pointer moves over the real desktop and the
-    /// synthetic clicks fall through to the apps beneath (see [`KeyboardGrab`]).
+    /// A small notice is shown at the top of the screen for the duration, so the
+    /// keyboard grab is never a mystery: the user can see move mode is active,
+    /// what the keys do, and that Escape leaves (the WM's own hotkeys, including
+    /// the one that launched `mole`, are suppressed while the grab is held).
     pub fn run_free_move(&self) -> Result<()> {
         let pointer = Pointer::new(self.conn);
         let grab = KeyboardGrab::new(self.conn)?;
+        // Keep the notice alive for the whole interaction (dropped on return).
+        let _notice = self.show_move_notice();
 
         let m = &self.config.movement;
         let k = &self.config.keys;
@@ -496,6 +500,42 @@ impl<'a> Session<'a> {
         result
     }
 
+    /// Build and map the free-move notice bar at the top of the screen, labelled
+    /// with the current key bindings. Returns the live window (dropped to remove
+    /// it). Failure to show it is non-fatal — move mode still works.
+    fn show_move_notice(&self) -> Option<Hud<'_>> {
+        let k = &self.config.keys;
+        let show_key = |s: &str| match s {
+            "space" => "Space".to_string(),
+            other => other.to_string(),
+        };
+        let moves = format!(
+            "{}{}{}{}",
+            k.move_left, k.move_down, k.move_up, k.move_right
+        );
+        let text = format!(
+            "MOVE   {moves} or arrows: move  ·  {}: faster  ·  {}: click  {}: right  {}: double  {}: drag  ·  Esc: exit",
+            show_key(&k.speed_boost),
+            k.left_click,
+            k.right_click,
+            k.double_click,
+            k.drag,
+        );
+        let frame = self.renderer.hud(&text).ok()?;
+        let bounds = self.conn.root_bounds();
+        let x = ((bounds.width - frame.width) / 2).max(0) as i16;
+        Hud::show(
+            self.conn,
+            x,
+            16,
+            frame.width as u16,
+            frame.height as u16,
+            &frame.data,
+            frame.stride,
+        )
+        .ok()
+    }
+
     /// Flip a left-button drag on or off. Pressing starts it; pressing again
     /// releases and copies the resulting selection to the clipboard (Plan §4.2).
     /// Returns the new dragging state.
@@ -520,5 +560,18 @@ fn key_char(s: &str) -> char {
     match s {
         "space" => ' ',
         _ => s.chars().next().unwrap_or('\0'),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_char;
+
+    #[test]
+    fn key_char_reads_a_letter_a_name_and_an_empty_string() {
+        assert_eq!(key_char("h"), 'h');
+        assert_eq!(key_char("space"), ' '); // the one named key
+        assert_eq!(key_char(""), '\0'); // empty -> sentinel, matches nothing
+        assert_eq!(key_char(";"), ';'); // punctuation is fine
     }
 }

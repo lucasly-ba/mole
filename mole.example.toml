@@ -88,6 +88,10 @@ prewarm = true
 # only land at the start of each phrase). Drag selection always works on phrases,
 # so a whole sentence stays selectable either way.
 hint_words = true
+# Also hint icon-only clickable things with no text — toolbar buttons, tab
+# favicons, window controls — found from the pixels. true by default; set false
+# for text-only hints. Heuristic, so it may add the odd stray hint on a busy image.
+hint_icons = true
 
 [daemon]
 # Unix socket the daemon listens on. The CLI talks to it over this socket.

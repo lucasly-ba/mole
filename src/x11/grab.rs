@@ -75,7 +75,7 @@ impl<'a> KeyboardGrab<'a> {
     /// loop tracks.
     pub fn drain(&self) -> Result<Vec<KeyTransition>> {
         // (pressed, keycode, modifier state, time)
-        let mut raw: Vec<(bool, u8, u16, u32)> = Vec::new();
+        let mut raw: Vec<RawKey> = Vec::new();
         while let Some(event) = self.conn.conn.poll_for_event().map_err(Error::x11)? {
             match event {
                 Event::KeyPress(e) => raw.push((true, e.detail, e.state.into(), e.time)),
@@ -83,28 +83,44 @@ impl<'a> KeyboardGrab<'a> {
                 _ => {}
             }
         }
+        Ok(collapse_autorepeat(&raw)
+            .into_iter()
+            .map(|(pressed, keycode, state)| {
+                let shifted = state & u16::from(ModMask::SHIFT) != 0;
+                KeyTransition {
+                    input: self.conn.decode_key(keycode, shifted),
+                    pressed,
+                }
+            })
+            .collect())
+    }
+}
 
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < raw.len() {
-            let (pressed, keycode, state, time) = raw[i];
-            if !pressed {
-                if let Some(&(next_pressed, next_code, _, next_time)) = raw.get(i + 1) {
-                    if next_pressed && next_code == keycode && next_time == time {
-                        i += 2; // auto-repeat: drop the release and its paired press
-                        continue;
-                    }
+/// One raw key event: `(pressed, keycode, modifier state, time)`.
+type RawKey = (bool, u8, u16, u32);
+
+/// Collapse X auto-repeat in a queued run of key events: a release immediately
+/// followed by a press of the same keycode at the same timestamp is the server
+/// repeating a held key, so both are dropped. Returns the surviving transitions
+/// as `(pressed, keycode, state)` (time no longer needed). Pure, so it's tested
+/// directly without an X server.
+fn collapse_autorepeat(raw: &[RawKey]) -> Vec<(bool, u8, u16)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        let (pressed, keycode, state, time) = raw[i];
+        if !pressed {
+            if let Some(&(next_pressed, next_code, _, next_time)) = raw.get(i + 1) {
+                if next_pressed && next_code == keycode && next_time == time {
+                    i += 2; // auto-repeat: drop the release and its paired press
+                    continue;
                 }
             }
-            let shifted = state & u16::from(ModMask::SHIFT) != 0;
-            out.push(KeyTransition {
-                input: self.conn.decode_key(keycode, shifted),
-                pressed,
-            });
-            i += 1;
         }
-        Ok(out)
+        out.push((pressed, keycode, state));
+        i += 1;
     }
+    out
 }
 
 impl Drop for KeyboardGrab<'_> {
@@ -113,5 +129,48 @@ impl Drop for KeyboardGrab<'_> {
             let _ = self.conn.conn.ungrab_keyboard(CURRENT_TIME);
             let _ = self.conn.flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lone_press_and_release_survive() {
+        let raw = [(true, 40, 0, 100), (false, 40, 0, 250)];
+        assert_eq!(
+            collapse_autorepeat(&raw),
+            vec![(true, 40, 0), (false, 40, 0)]
+        );
+    }
+
+    #[test]
+    fn a_repeat_pair_is_dropped() {
+        // Held key: initial press, then release+press pairs sharing a timestamp,
+        // then the real release. Only the opening press and final release remain.
+        let raw = [
+            (true, 40, 0, 100),  // initial press
+            (false, 40, 0, 150), // \ auto-repeat (same time)
+            (true, 40, 0, 150),  // /
+            (false, 40, 0, 150), // \ auto-repeat
+            (true, 40, 0, 150),  // /
+            (false, 40, 0, 300), // real release (no following press)
+        ];
+        assert_eq!(
+            collapse_autorepeat(&raw),
+            vec![(true, 40, 0), (false, 40, 0)],
+            "held key reads as one press until truly released"
+        );
+    }
+
+    #[test]
+    fn a_release_followed_by_a_different_key_is_kept() {
+        // Not auto-repeat: different keycode, so the release is real.
+        let raw = [(false, 40, 0, 100), (true, 41, 0, 100)];
+        assert_eq!(
+            collapse_autorepeat(&raw),
+            vec![(false, 40, 0), (true, 41, 0)]
+        );
     }
 }
