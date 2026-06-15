@@ -53,8 +53,7 @@ the PR how you verified them.
 - Branch off `main`, keep changes focused, and prefer several small commits over
   one large one.
 - Make sure `cargo fmt`, `cargo clippy` and the tests pass.
-- Update [CHANGELOG.md](CHANGELOG.md) under `## [Unreleased]` and the docs
-  (README / JOURNEY) when behaviour changes.
+- Update the docs (README / JOURNEY) when behaviour changes.
 - Open the PR against `main`; CI must be green before it can merge.
 
 By contributing, you agree your work is licensed under the project's
