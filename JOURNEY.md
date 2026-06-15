@@ -60,7 +60,8 @@ src/
 ├── x11/
 │   ├── connection.rs  the connection + keysym/keycode maps (tested)
 │   ├── pointer.rs     warp + XTest clicks/drag
-│   └── overlay.rs     the transparent ARGB overlay window
+│   ├── overlay.rs     the transparent ARGB overlay window
+│   └── grab.rs        windowless keyboard grab for free-move
 ├── detect/
 │   ├── mod.rs         Element + Detector trait + finalize() (tested)
 │   └── ocr/
@@ -73,7 +74,7 @@ src/
 ├── hint/
 │   ├── label.rs       prefix-free labels + live matching (tested hard)
 │   └── layout.rs      anti-overlap box placement (tested)
-├── motion.rs          accelerating step sizing for hjkl (tested)
+├── motion.rs          velocity-based pointer glide for free-move (tested)
 ├── render/
 │   ├── mod.rs         cairo drawing → raw ARGB buffer (tested)
 │   └── palette.rs     adaptive contrast (tested)
@@ -100,18 +101,30 @@ the systems modules together; `daemon` drives `session`.
   which reaches the daemon over its Unix socket — so the WM already owns the
   hotkey and mole needs no grab of its own. An early `XGrabKey` implementation
   existed but was removed as dead weight once socket triggering proved sufficient.
-- **§1.3 hjkl movement** → `x11/pointer.rs` + `session::run_free_move`, with the
-  step sizing factored into `motion.rs`. Relative warps, **remappable keys**
-  (`move_left`/`down`/`up`/`right`, default hjkl, any key — letters or
-  punctuation), a normal/large step, and optional hold-to-accelerate:
-  `motion::Accelerator` grows the step while a direction repeats and resets when
-  it changes — pure arithmetic, unit-tested away from any X11. The large step is
-  Shift, and it works on *any* key: a press is decoded at its **unshifted** level
-  with the Shift state reported alongside (`KeyInput::Char { c, shift }`), so a
-  binding matches its key with or without Shift instead of relying on a letter's
-  case flipping (which left `;`/`'`/`\` with no large step). Free-move paints the
-  same desktop backdrop as the hint overlay — without it the move-mode overlay is
-  a black screen on a compositor-less WM.
+- **§1.3 Free-move** → `session::run_free_move` + `x11/grab.rs` + `motion.rs`.
+  Move mode should feel like a real mouse, so the pointer **glides** rather than
+  jumping a fixed step: `motion::Glide` models a velocity (px/second) that starts
+  at a base speed, accelerates the longer a direction is held, and is multiplied
+  by a **boost** key for crossing the screen — pure arithmetic with sub-pixel
+  carry, unit-tested away from any X11. The session loop ticks it at ~125 Hz and
+  warps the pointer by the per-frame delta. **Remappable keys**
+  (`move_left`/`down`/`up`/`right`, default hjkl) steer; action keys click,
+  double-click, right-click, and toggle a drag-and-copy — so move mode is a full
+  pointer, not just a cursor nudger.
+
+  Two design points worth keeping:
+  - **No window at all.** Unlike the hint overlay, free-move shows nothing of its
+    own (`x11::KeyboardGrab`): it grabs the keyboard on the root window
+    (`owner_events = false`, so every key reaches us regardless of focus) and the
+    pointer glides over the *live* desktop. That sidesteps the old "black screen
+    without a compositor" problem entirely — there is no overlay to paint — and
+    synthetic clicks fall straight through to the apps beneath, since nothing is
+    covering them.
+  - **Auto-repeat collapse.** Holding a key, the X server (without detectable
+    auto-repeat) fakes a stream of `Release`+`Press` pairs sharing a timestamp.
+    `KeyboardGrab::drain` drops a `Release` immediately followed by a same-key
+    `Press` at the same time, so a held key reads as one press until it is truly
+    released — exactly the held-state the glide loop tracks.
 
 ### Phase 2 — Overlay
 

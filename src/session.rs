@@ -26,11 +26,11 @@ use crate::hint::{
     MatchState,
 };
 use crate::interaction;
-use crate::motion::{Accelerator, Dir};
+use crate::motion::Glide;
 use crate::render::{Backdrop, Renderer};
 use crate::x11::connection::KeyInput;
 use crate::x11::overlay::{Overlay, OverlayInput};
-use crate::x11::{Button, Conn, Pointer};
+use crate::x11::{Button, Conn, KeyboardGrab, Pointer};
 
 /// Spare labels reserved beyond the immediately-shown hints, so late-arriving
 /// (background-OCR'd) hints get stable labels without disturbing the ones the
@@ -39,6 +39,10 @@ const LABEL_RESERVE: usize = 64;
 /// Idle poll interval for the incremental select loop (ms): low enough to feel
 /// instant, high enough to cost no real CPU while waiting.
 const POLL_MS: u64 = 8;
+/// Free-move frame time (ms): the pointer is warped and the keyboard polled once
+/// a frame, so this is both the glide's time-step and its input latency. ~125 Hz
+/// is smooth to the eye and imperceptibly responsive.
+const MOVE_TICK_MS: u64 = 8;
 
 /// What a hint session does once a target is chosen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,62 +380,125 @@ impl<'a> Session<'a> {
         self.repaint(overlay, backdrop, boxes, screen, matcher.typed())
     }
 
-    /// Free pointer movement with hjkl (Plan §1.3). Grabs the keyboard via a
-    /// transparent overlay and moves the pointer until Escape/Enter.
+    /// Free pointer movement (Plan §1.3): grab the keyboard and glide the pointer
+    /// with hjkl over the live desktop until Escape. The glide accelerates while a
+    /// direction is held and a boost key crosses the screen fast; action keys
+    /// click, double-click, right-click and drag-select where the pointer rests.
+    ///
+    /// No overlay is shown — the pointer moves over the real desktop and the
+    /// synthetic clicks fall through to the apps beneath (see [`KeyboardGrab`]).
     pub fn run_free_move(&self) -> Result<()> {
         let pointer = Pointer::new(self.conn);
-        let screen = Screen::capture_full(self.conn)?;
-        let mut overlay = Overlay::new(self.conn)?;
-        // Paint the desktop snapshot so move mode isn't a black screen when no
-        // compositor is running (same reason the hint overlay does — see
-        // Renderer::backdrop). The hardware cursor rides on top of it.
-        let backdrop =
-            self.renderer
-                .backdrop(overlay.width() as i32, overlay.height() as i32, &screen)?;
-        overlay.show()?;
-        let frame = self.renderer.render_onto(&backdrop, &[], "", &screen)?;
-        overlay.present(&frame.data, frame.stride)?;
+        let grab = KeyboardGrab::new(self.conn)?;
 
         let m = &self.config.movement;
         let k = &self.config.keys;
-        let first = |s: &str| s.chars().next().unwrap_or('\0');
         let (left, down, up, right) = (
-            first(&k.move_left),
-            first(&k.move_down),
-            first(&k.move_up),
-            first(&k.move_right),
+            key_char(&k.move_left),
+            key_char(&k.move_down),
+            key_char(&k.move_up),
+            key_char(&k.move_right),
         );
-        let mut accel = Accelerator::new(m.step, m.large_step, m.acceleration, m.max_step);
+        let boost_key = key_char(&k.speed_boost);
+        let (left_click, right_click, double_click, drag_key) = (
+            key_char(&k.left_click),
+            key_char(&k.right_click),
+            key_char(&k.double_click),
+            key_char(&k.drag),
+        );
 
-        loop {
-            match overlay.next_input()? {
-                OverlayInput::Key(KeyInput::Escape)
-                | OverlayInput::Key(KeyInput::Enter)
-                | OverlayInput::Click(_) => break,
-                OverlayInput::Key(KeyInput::Char { c, shift }) => {
-                    let large = shift;
-                    let lc = c.to_ascii_lowercase();
-                    let dir = if lc == left {
-                        Some(Dir::Left)
-                    } else if lc == right {
-                        Some(Dir::Right)
-                    } else if lc == up {
-                        Some(Dir::Up)
-                    } else if lc == down {
-                        Some(Dir::Down)
-                    } else {
-                        None
-                    };
-                    if let Some(dir) = dir {
-                        let (dx, dy) = accel.next(dir, large);
-                        pointer.move_relative(dx, dy)?;
+        let mut glide = Glide::new(m.speed, m.max_speed, m.acceleration);
+        let (mut hold_left, mut hold_right, mut hold_up, mut hold_down) =
+            (false, false, false, false);
+        let mut boosting = false;
+        let mut dragging = false;
+
+        let tick = Duration::from_millis(MOVE_TICK_MS);
+        let mut last = std::time::Instant::now();
+
+        let result = loop {
+            let mut quit = false;
+            for ev in grab.drain()? {
+                let lc = match ev.input {
+                    KeyInput::Escape => {
+                        quit = true;
+                        continue;
+                    }
+                    KeyInput::Char { c, .. } => c.to_ascii_lowercase(),
+                    _ => continue,
+                };
+                // Direction and boost keys track their held state every frame.
+                if lc == left {
+                    hold_left = ev.pressed;
+                } else if lc == right {
+                    hold_right = ev.pressed;
+                } else if lc == up {
+                    hold_up = ev.pressed;
+                } else if lc == down {
+                    hold_down = ev.pressed;
+                } else if lc == boost_key {
+                    boosting = ev.pressed;
+                } else if ev.pressed {
+                    // Action keys fire once, on the press.
+                    if lc == left_click {
+                        pointer.click(Button::Left, 1)?;
+                    } else if lc == right_click {
+                        pointer.click(Button::Right, 1)?;
+                    } else if lc == double_click {
+                        pointer.click(Button::Left, 2)?;
+                    } else if lc == drag_key {
+                        dragging = self.toggle_drag(&pointer, dragging)?;
                     }
                 }
-                OverlayInput::Key(_) => {}
             }
-        }
+            if quit {
+                break Ok(());
+            }
 
-        overlay.hide()?;
-        Ok(())
+            let now = std::time::Instant::now();
+            let dt = now.duration_since(last).as_secs_f64();
+            last = now;
+            let dx = hold_right as i32 - hold_left as i32;
+            let dy = hold_down as i32 - hold_up as i32;
+            let boost = if boosting { m.boost } else { 1.0 };
+            let (mx, my) = glide.tick(dx, dy, dt, boost);
+            if mx != 0 || my != 0 {
+                pointer.move_relative(mx, my)?;
+            }
+
+            std::thread::sleep(tick);
+        };
+
+        // Never leave the button stuck down if we exit mid-drag.
+        if dragging {
+            let _ = pointer.release(Button::Left);
+        }
+        result
+    }
+
+    /// Flip a left-button drag on or off. Pressing starts it; pressing again
+    /// releases and copies the resulting selection to the clipboard (Plan §4.2).
+    /// Returns the new dragging state.
+    fn toggle_drag(&self, pointer: &Pointer, dragging: bool) -> Result<bool> {
+        if dragging {
+            pointer.release(Button::Left)?;
+            match interaction::copy_primary_to_clipboard() {
+                Ok(text) => log::info!("copied {} chars to clipboard", text.len()),
+                Err(e) => log::warn!("clipboard copy failed: {e}"),
+            }
+            Ok(false)
+        } else {
+            pointer.press(Button::Left)?;
+            Ok(true)
+        }
+    }
+}
+
+/// The character a configured key string maps to. A few keys have no printable
+/// character, so a name is accepted; today that's just `"space"`.
+fn key_char(s: &str) -> char {
+    match s {
+        "space" => ' ',
+        _ => s.chars().next().unwrap_or('\0'),
     }
 }

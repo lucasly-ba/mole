@@ -1,68 +1,80 @@
-//! Pointer-movement sizing for free (hjkl) mode.
+//! Smooth pointer gliding for free (hjkl) mode.
 //!
-//! Tapping a direction nudges the pointer by the base step; holding it (the key
-//! auto-repeats, arriving as a run of same-direction presses) ramps the step up
-//! by a configurable factor on each repeat, capped, so you cross the screen fast
-//! but still land precisely. Shift selects a larger base step.
+//! Free-move is meant to feel like a real mouse, not a sequence of jumps. So
+//! instead of warping a fixed step per key press, [`Glide`] models a *velocity*:
+//! while a direction is held the pointer keeps moving, ramping from a base speed
+//! up to a cap the longer you hold, and a boost key multiplies the speed for
+//! crossing the screen quickly. The session loop ticks this on a fixed timer and
+//! warps the pointer by the resulting delta each frame.
 //!
-//! This is pure arithmetic with no X11 in sight, so it is unit-tested directly;
-//! `session::run_free_move` owns the keyboard loop and the actual pointer warp.
+//! Speeds are in pixels per second and a tick is a fraction of a second, so a
+//! frame's motion is `speed * dt`; sub-pixel remainders are carried between
+//! frames so slow speeds still move smoothly rather than stalling. This is pure
+//! arithmetic with no X11 in sight, so it is unit-tested directly;
+//! `session::run_free_move` owns the keyboard grab and the actual pointer warp.
 
-/// A direction of travel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dir {
-    Left,
-    Right,
-    Up,
-    Down,
+/// Turns a held direction (and how long it's been held) into smooth per-frame
+/// pixel deltas, accelerating while a direction is sustained and stopping the
+/// moment nothing is held.
+pub struct Glide {
+    /// Speed (px/s) the first frame a direction is held.
+    base: f64,
+    /// Hard ceiling (px/s) however long a direction is held.
+    max: f64,
+    /// Multiplier applied to the speed for each second a direction stays held
+    /// (`1.0` disables acceleration).
+    accel: f64,
+    /// Current speed (px/s); `0.0` when nothing is held.
+    speed: f64,
+    /// Sub-pixel remainders carried to the next frame so slow glides still move.
+    rem_x: f64,
+    rem_y: f64,
 }
 
-/// Turns a stream of directional presses into pixel deltas, accelerating while
-/// the same direction repeats and resetting the moment it changes.
-pub struct Accelerator {
-    base: i32,
-    large: i32,
-    factor: f64,
-    max: i32,
-    last: Option<Dir>,
-    repeats: u32,
-}
-
-impl Accelerator {
-    /// * `base` / `large` — step for a tap, normally and with Shift.
-    /// * `factor` — multiplier applied per consecutive same-direction repeat
-    ///   (`1.0` disables acceleration).
-    /// * `max` — hard ceiling on a single step.
-    pub fn new(base: i32, large: i32, factor: f64, max: i32) -> Self {
-        Accelerator {
-            base,
-            large,
-            factor,
-            max,
-            last: None,
-            repeats: 0,
+impl Glide {
+    pub fn new(base: f64, max: f64, accel: f64) -> Self {
+        Glide {
+            base: base.max(0.0),
+            max: max.max(base),
+            accel: accel.max(1.0),
+            speed: 0.0,
+            rem_x: 0.0,
+            rem_y: 0.0,
         }
     }
 
-    /// The `(dx, dy)` for one press in `dir`. `large` picks the Shift step.
-    pub fn next(&mut self, dir: Dir, large: bool) -> (i32, i32) {
-        if self.last == Some(dir) {
-            self.repeats = self.repeats.saturating_add(1);
+    /// Advance one frame. `dx`/`dy` are the held direction on each axis, each in
+    /// `{-1, 0, 1}` (so a diagonal is `(±1, ±1)`); `dt` is the frame time in
+    /// seconds and `boost` a speed multiplier (`1.0` for none). Returns the whole
+    /// pixels to warp the pointer by this frame.
+    pub fn tick(&mut self, dx: i32, dy: i32, dt: f64, boost: f64) -> (i32, i32) {
+        if dx == 0 && dy == 0 {
+            // Released: stop dead and forget any momentum or sub-pixel debt.
+            self.speed = 0.0;
+            self.rem_x = 0.0;
+            self.rem_y = 0.0;
+            return (0, 0);
+        }
+
+        // First frame of a press starts at the base speed; subsequent frames ramp
+        // it up toward the cap by the time held.
+        self.speed = if self.speed < self.base {
+            self.base
         } else {
-            self.repeats = 0;
-            self.last = Some(dir);
-        }
+            (self.speed * self.accel.powf(dt)).min(self.max)
+        };
 
-        let base = if large { self.large } else { self.base };
-        let scaled = (base as f64 * self.factor.powi(self.repeats as i32)).round() as i32;
-        let step = scaled.clamp(base, self.max.max(base));
+        // Normalise so a diagonal isn't √2 faster than a straight line.
+        let len = ((dx * dx + dy * dy) as f64).sqrt();
+        let travel = self.speed * boost.max(1.0) * dt;
+        self.rem_x += dx as f64 / len * travel;
+        self.rem_y += dy as f64 / len * travel;
 
-        match dir {
-            Dir::Left => (-step, 0),
-            Dir::Right => (step, 0),
-            Dir::Up => (0, -step),
-            Dir::Down => (0, step),
-        }
+        let mx = self.rem_x.trunc();
+        let my = self.rem_y.trunc();
+        self.rem_x -= mx;
+        self.rem_y -= my;
+        (mx as i32, my as i32)
     }
 }
 
@@ -71,49 +83,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn first_press_is_the_base_step() {
-        let mut a = Accelerator::new(24, 160, 1.5, 600);
-        assert_eq!(a.next(Dir::Right, false), (24, 0));
-        assert_eq!(
-            a.next(Dir::Up, true),
-            (0, -160),
-            "Shift uses the large step"
-        );
+    fn first_frame_moves_at_the_base_speed() {
+        let mut g = Glide::new(1000.0, 4000.0, 2.0);
+        assert_eq!(g.tick(1, 0, 0.1, 1.0), (100, 0)); // 1000 px/s * 0.1 s
     }
 
     #[test]
-    fn repeating_a_direction_accelerates() {
-        let mut a = Accelerator::new(10, 100, 2.0, 10_000);
-        assert_eq!(a.next(Dir::Right, false), (10, 0)); // repeats 0: 10 * 2^0
-        assert_eq!(a.next(Dir::Right, false), (20, 0)); // repeats 1: 10 * 2^1
-        assert_eq!(a.next(Dir::Right, false), (40, 0)); // repeats 2: 10 * 2^2
+    fn releasing_stops_and_clears_momentum() {
+        let mut g = Glide::new(1000.0, 4000.0, 2.0);
+        g.tick(0, 1, 0.5, 1.0); // moving
+        assert_eq!(g.tick(0, 0, 0.1, 1.0), (0, 0), "no direction = no motion");
     }
 
     #[test]
-    fn changing_direction_resets_acceleration() {
-        let mut a = Accelerator::new(10, 100, 2.0, 10_000);
-        a.next(Dir::Right, false);
-        a.next(Dir::Right, false); // now accelerated
-        assert_eq!(
-            a.next(Dir::Left, false),
-            (-10, 0),
-            "new direction starts at base"
-        );
+    fn holding_accelerates_up_to_the_cap() {
+        let mut g = Glide::new(1000.0, 4000.0, 2.0);
+        assert_eq!(g.tick(0, 1, 1.0, 1.0), (0, 1000)); // base
+        assert_eq!(g.tick(0, 1, 1.0, 1.0), (0, 2000)); // 1000 * 2^1
+        assert_eq!(g.tick(0, 1, 1.0, 1.0), (0, 4000)); // 4000 capped
+        assert_eq!(g.tick(0, 1, 1.0, 1.0), (0, 4000)); // stays capped
     }
 
     #[test]
-    fn step_is_capped_at_max() {
-        let mut a = Accelerator::new(10, 100, 10.0, 50);
-        assert_eq!(a.next(Dir::Down, false), (0, 10));
-        assert_eq!(a.next(Dir::Down, false), (0, 50), "100 clamped to max 50");
-        assert_eq!(a.next(Dir::Down, false), (0, 50));
+    fn boost_multiplies_the_speed() {
+        let mut g = Glide::new(1000.0, 4000.0, 1.0);
+        assert_eq!(g.tick(1, 0, 0.1, 2.0), (200, 0)); // 1000 * 0.1 * 2
     }
 
     #[test]
-    fn factor_one_never_accelerates() {
-        let mut a = Accelerator::new(24, 160, 1.0, 600);
-        assert_eq!(a.next(Dir::Right, false), (24, 0));
-        assert_eq!(a.next(Dir::Right, false), (24, 0));
-        assert_eq!(a.next(Dir::Right, false), (24, 0));
+    fn a_diagonal_is_normalised() {
+        let mut g = Glide::new(1000.0, 4000.0, 1.0);
+        // Each axis gets 1000/√2 ≈ 707, not the full 1000.
+        assert_eq!(g.tick(1, 1, 1.0, 1.0), (707, 707));
+    }
+
+    #[test]
+    fn acceleration_of_one_never_speeds_up() {
+        let mut g = Glide::new(500.0, 4000.0, 1.0);
+        assert_eq!(g.tick(1, 0, 1.0, 1.0), (500, 0));
+        assert_eq!(g.tick(1, 0, 1.0, 1.0), (500, 0));
+        assert_eq!(g.tick(1, 0, 1.0, 1.0), (500, 0));
+    }
+
+    #[test]
+    fn sub_pixel_motion_accumulates_then_steps() {
+        // 100 px/s for 5 ms = 0.5 px a frame: no move, then a 1 px move.
+        let mut g = Glide::new(100.0, 100.0, 1.0);
+        assert_eq!(g.tick(1, 0, 0.005, 1.0), (0, 0));
+        assert_eq!(g.tick(1, 0, 0.005, 1.0), (1, 0));
     }
 }
