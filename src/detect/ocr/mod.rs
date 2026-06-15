@@ -20,6 +20,7 @@
 //! [`dedup_words`].
 
 mod cache;
+mod cancel;
 mod phrase;
 mod tesseract;
 mod tsv;
@@ -27,6 +28,7 @@ mod tsv;
 use std::sync::{Arc, Mutex};
 
 pub use cache::ScanCache;
+pub use cancel::Cancel;
 
 use cache::Band;
 
@@ -51,12 +53,24 @@ pub struct OcrDetector {
     grouping: Grouping,
     tiles: usize,
     cache: Arc<Mutex<ScanCache>>,
+    /// Lets another thread kill this detector's in-flight OCR. The on-demand path
+    /// uses a fresh, never-aborted token; the pre-warm shares the daemon's so a
+    /// hint can preempt it.
+    cancel: Cancel,
 }
 
 impl OcrDetector {
     /// Build a detector sharing `cache` (the daemon owns one cache so it survives
-    /// across hints and can be warmed in the background).
+    /// across hints and can be warmed in the background), with its own
+    /// never-aborted cancellation token (the on-demand path).
     pub fn new(config: &Config, cache: Arc<Mutex<ScanCache>>) -> Self {
+        Self::with_cancel(config, cache, Cancel::new())
+    }
+
+    /// Like [`OcrDetector::new`] but driven by a shared `cancel` token, so a
+    /// caller (the daemon, on a hint) can abort this detector's OCR mid-read. Used
+    /// by the background pre-warm.
+    pub fn with_cancel(config: &Config, cache: Arc<Mutex<ScanCache>>, cancel: Cancel) -> Self {
         OcrDetector {
             tesseract: Tesseract::new(config.ocr.binary.clone(), config.ocr.language.clone()),
             min_confidence: config.ocr.min_confidence,
@@ -67,6 +81,7 @@ impl OcrDetector {
             },
             tiles: config.ocr.tiles.max(1),
             cache,
+            cancel,
         }
     }
 
@@ -89,9 +104,10 @@ impl OcrDetector {
             region,
             &bands,
             self.min_confidence,
+            &self.cancel,
         )?;
         for (band, words) in fresh {
-            cache.splice(region.y, band, words);
+            cache.splice(&rgb, region.y, band, words);
         }
         Ok(dedup_words(cache.all_words()))
     }
@@ -153,10 +169,11 @@ impl Detector for OcrDetector {
                     region,
                     &bands,
                     self.min_confidence,
+                    &self.cancel,
                 )?;
                 let mut cache = self.cache.lock().unwrap();
                 for (band, words) in fresh {
-                    cache.splice(region.y, band, words);
+                    cache.splice(&rgb, region.y, band, words);
                 }
                 cache.all_words()
             };
@@ -182,15 +199,16 @@ impl Detector for OcrDetector {
         // and return the words that now live inside those bands.
         let cache = std::sync::Arc::clone(&self.cache);
         let tess = self.tesseract.clone();
+        let cancel = self.cancel.clone();
         let min_conf = self.min_confidence;
         let min_size = self.min_element_size;
         let grouping = self.grouping;
         let pending: ScanRest = Box::new(move || {
-            let fresh = ocr_bands(&tess, &rgb, width, region, &bands, min_conf)?;
+            let fresh = ocr_bands(&tess, &rgb, width, region, &bands, min_conf, &cancel)?;
             let inside: Vec<Word> = {
                 let mut cache = cache.lock().unwrap();
                 for (band, words) in fresh {
-                    cache.splice(region.y, band, words);
+                    cache.splice(&rgb, region.y, band, words);
                 }
                 cache
                     .all_words()
@@ -241,6 +259,7 @@ fn ocr_bands(
     region: Rect,
     bands: &[Band],
     min_conf: f32,
+    cancel: &Cancel,
 ) -> Result<Vec<(Band, Vec<Word>)>> {
     if bands.is_empty() {
         return Ok(Vec::new());
@@ -254,7 +273,7 @@ fn ocr_bands(
             .map(|&b| {
                 scope.spawn(move || -> Result<(Band, Vec<Word>)> {
                     let ppm = tesseract::encode_ppm_band(rgb, width, b.y0, b.h);
-                    let raw = tess.run(ppm, threads)?;
+                    let raw = tess.run(ppm, threads, cancel)?;
                     let area = Rect::new(region.x, region.y + b.y0, width, b.h);
                     Ok((b, tsv::parse(&raw, area, min_conf)))
                 })

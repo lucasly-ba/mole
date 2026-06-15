@@ -93,10 +93,15 @@ impl ScanCache {
         self.words.clear();
     }
 
-    /// Decide which bands to OCR for the capture `rgb`, and adopt those regions
-    /// into the baseline (they're about to be re-read). Cold scans return the
+    /// Decide which bands to OCR for the capture `rgb`. Cold scans return the
     /// whole screen as `tiles` overlapping bands; warm scans return tight bands
     /// around what changed, or nothing if only noise moved.
+    ///
+    /// Planning does **not** touch the baseline — each band is adopted only when
+    /// it is actually [`splice`](ScanCache::splice)d back in. So a scan that is
+    /// aborted before its bands are read leaves the baseline (and the cached
+    /// words) untouched, and those regions are simply re-planned next time rather
+    /// than going stale.
     pub(super) fn plan(
         &mut self,
         rgb: &[u8],
@@ -112,7 +117,7 @@ impl ScanCache {
             self.words.clear();
         }
 
-        let bands: Vec<Band> = if self.have_prev {
+        if self.have_prev {
             // Only split a change band for parallelism when it is genuinely large
             // (a full scroll), not for an ordinary localised edit.
             let chunk = (height / tiles.max(1) as i32).max(CELL as i32 * 4);
@@ -126,23 +131,29 @@ impl ScanCache {
                 .into_iter()
                 .map(|(y0, h)| Band { y0, h })
                 .collect()
-        };
-
-        // Adopt the planned regions into the baseline now that they'll be re-read.
-        let row = width.max(0) as usize * 3;
-        for b in &bands {
-            let start = (b.y0.max(0) as usize * row).min(self.prev.len());
-            let end = ((b.y0 + b.h).max(0) as usize * row).min(self.prev.len());
-            self.prev[start..end].copy_from_slice(&rgb[start..end]);
         }
-        self.have_prev = true;
-        bands
     }
 
     /// Replace the words inside a re-read `band` with the freshly OCR'd ones,
-    /// keeping every word outside it. `origin_y` is the capture's screen-space top
-    /// (so band coordinates line up with the absolute word boxes).
-    pub(super) fn splice(&mut self, origin_y: i32, band: Band, new_words: Vec<Word>) {
+    /// keeping every word outside it, and adopt the band's pixels into the
+    /// baseline now that it has actually been read. `origin_y` is the capture's
+    /// screen-space top (so band coordinates line up with the absolute word
+    /// boxes); `rgb` is the capture the band was OCR'd from.
+    pub(super) fn splice(&mut self, rgb: &[u8], origin_y: i32, band: Band, new_words: Vec<Word>) {
+        // Adopt the band into the baseline. Only spliced bands move the baseline,
+        // so an aborted scan (whose bands never reach here) re-reads them later.
+        let row = self.width.max(0) as usize * 3;
+        let start = (band.y0.max(0) as usize * row)
+            .min(self.prev.len())
+            .min(rgb.len());
+        let end = ((band.y0 + band.h).max(0) as usize * row)
+            .min(self.prev.len())
+            .min(rgb.len());
+        if start < end {
+            self.prev[start..end].copy_from_slice(&rgb[start..end]);
+        }
+        self.have_prev = true;
+
         let y0 = origin_y + band.y0;
         let y1 = y0 + band.h;
         self.words
@@ -265,7 +276,7 @@ mod tests {
     fn scan(c: &mut ScanCache, buf: &[u8], w: i32, h: i32) -> Vec<Band> {
         let bands = c.plan(buf, w, h, TILES, 20);
         for &b in &bands {
-            c.splice(0, b, vec![Word::new(Rect::new(0, b.y0, 5, 5), "x")]);
+            c.splice(buf, 0, b, vec![Word::new(Rect::new(0, b.y0, 5, 5), "x")]);
         }
         bands
     }
@@ -341,8 +352,12 @@ mod tests {
     fn splice_keeps_words_outside_the_band() {
         let mut c = ScanCache::new();
         let buf = rgb(W, H);
+        // Cold scan to establish a baseline (only splicing adopts it now).
+        let cold = c.plan(&buf, W, H, TILES, 20);
+        for &b in &cold {
+            c.splice(&buf, 0, b, vec![]);
+        }
         // Seed with words at known rows across the screen.
-        c.plan(&buf, W, H, TILES, 20);
         c.words = vec![
             Word::new(Rect::new(0, 50, 5, 5), "top"),
             Word::new(Rect::new(0, 430, 5, 5), "middle"),
@@ -353,12 +368,31 @@ mod tests {
         rewrite_rows(&mut tweaked, W, 400, 460);
         let bands = c.plan(&tweaked, W, H, TILES, 20);
         for &b in &bands {
-            c.splice(0, b, vec![Word::new(Rect::new(0, 430, 5, 5), "new")]);
+            c.splice(&tweaked, 0, b, vec![Word::new(Rect::new(0, 430, 5, 5), "new")]);
         }
         let words = c.all_words();
         let texts: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
         assert!(texts.contains(&"top") && texts.contains(&"bottom"));
         assert!(texts.contains(&"new") && !texts.contains(&"middle"));
+    }
+
+    #[test]
+    fn an_unspliced_scan_does_not_adopt_the_baseline() {
+        // A scan that plans bands but is aborted before any splice must leave the
+        // baseline untouched, so the same change is re-planned next time rather
+        // than silently treated as already-read.
+        let mut c = ScanCache::new();
+        let buf = rgb(W, H);
+        scan(&mut c, &buf, W, H); // establish a baseline
+
+        let mut tweaked = buf.clone();
+        rewrite_rows(&mut tweaked, W, 400, 480);
+        let first = c.plan(&tweaked, W, H, TILES, 20);
+        assert_eq!(first.len(), 1, "the change is planned once");
+        // Abort: no splice happens. The next plan over the same pixels must still
+        // see the change (baseline was not moved).
+        let again = c.plan(&tweaked, W, H, TILES, 20);
+        assert_eq!(again.len(), 1, "an un-spliced change is re-planned, not lost");
     }
 
     #[test]

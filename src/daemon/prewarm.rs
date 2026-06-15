@@ -21,7 +21,7 @@ use x11rb::protocol::Event;
 
 use crate::capture::Screen;
 use crate::config::Config;
-use crate::detect::{self, ScanCache};
+use crate::detect::{self, Cancel, ScanCache};
 use crate::error::{Error, Result};
 use crate::x11::Conn;
 
@@ -37,11 +37,18 @@ const MAX_WAIT: Duration = Duration::from_millis(1200);
 const IDLE_REACT: Duration = Duration::from_millis(700);
 
 /// Spawn the pre-warm thread. `active` is set by the daemon while an interaction
-/// owns the screen, telling the warmer to hold off. Failures (no X, no DAMAGE)
-/// disable pre-warming with a warning rather than taking the daemon down.
-pub fn spawn(config: Arc<Mutex<Config>>, cache: Arc<Mutex<ScanCache>>, active: Arc<AtomicBool>) {
+/// owns the screen, telling the warmer to hold off; `cancel` lets a triggered
+/// hint kill a pre-warm read mid-flight so it never makes the hint wait. Failures
+/// (no X, no DAMAGE) disable pre-warming with a warning rather than taking the
+/// daemon down.
+pub fn spawn(
+    config: Arc<Mutex<Config>>,
+    cache: Arc<Mutex<ScanCache>>,
+    active: Arc<AtomicBool>,
+    cancel: Cancel,
+) {
     std::thread::spawn(move || {
-        if let Err(e) = run(config, cache, active) {
+        if let Err(e) = run(config, cache, active, cancel) {
             log::warn!("OCR pre-warm disabled: {e}");
         }
     });
@@ -51,6 +58,7 @@ fn run(
     config: Arc<Mutex<Config>>,
     cache: Arc<Mutex<ScanCache>>,
     active: Arc<AtomicBool>,
+    cancel: Cancel,
 ) -> Result<()> {
     let conn = Conn::open()?;
     conn.conn
@@ -66,7 +74,7 @@ fn run(
     log::info!("OCR pre-warm watching the screen");
 
     // Warm once up front so even the first hint is ready.
-    warm(&conn, &config, &cache, &active);
+    warm(&conn, &config, &cache, &active, &cancel);
     let mut last_warm = Instant::now();
 
     loop {
@@ -83,11 +91,11 @@ fn run(
         // then catches anything that changed while this scan ran (and is cheap if
         // nothing did, since the cache is already current).
         if last_warm.elapsed() >= IDLE_REACT {
-            warm(&conn, &config, &cache, &active);
+            warm(&conn, &config, &cache, &active, &cancel);
         }
 
         wait_until_settled(&conn, damage)?;
-        warm(&conn, &config, &cache, &active);
+        warm(&conn, &config, &cache, &active, &cancel);
         last_warm = Instant::now();
     }
 }
@@ -122,8 +130,16 @@ fn acknowledge(conn: &Conn, damage: u32) -> Result<()> {
 }
 
 /// Capture the screen and refresh the cache, unless an interaction is active
-/// (in which case the capture would contain our own overlay).
-fn warm(conn: &Conn, config: &Mutex<Config>, cache: &Arc<Mutex<ScanCache>>, active: &AtomicBool) {
+/// (in which case the capture would contain our own overlay). The read runs under
+/// `cancel`, so a hint triggered while it's in flight can abort it; an aborted
+/// read is expected, not an error.
+fn warm(
+    conn: &Conn,
+    config: &Mutex<Config>,
+    cache: &Arc<Mutex<ScanCache>>,
+    active: &AtomicBool,
+    cancel: &Cancel,
+) {
     if active.load(Ordering::SeqCst) {
         return;
     }
@@ -138,9 +154,10 @@ fn warm(conn: &Conn, config: &Mutex<Config>, cache: &Arc<Mutex<ScanCache>>, acti
             return;
         }
     };
-    let detector = detect::from_config(&cfg, Arc::clone(cache));
+    let detector = detect::from_config_with_cancel(&cfg, Arc::clone(cache), cancel.clone());
     match detector.detect(&screen) {
         Ok(elements) => log::debug!("pre-warm cached {} elements", elements.len()),
+        Err(_) if cancel.aborted() => log::debug!("pre-warm preempted by a hint"),
         Err(e) => log::warn!("pre-warm OCR failed: {e}"),
     }
 }
