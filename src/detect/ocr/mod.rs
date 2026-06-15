@@ -253,15 +253,23 @@ impl Detector for OcrDetector {
             .map(|b| (region.y + b.y0, region.y + b.y0 + b.h))
             .collect();
 
-        // Phase 1: cached words that lie outside every changed band.
-        let outside: Vec<Word> = cached
+        // Phase 1: show *every* cached word immediately — including the ones
+        // inside the changed bands, at their last-known positions. A hovered link
+        // or a button that just repainted hasn't moved its text, so its hint is
+        // correct instantly; this is what makes a hint feel instant even right
+        // after the mouse swept over (and repainted) the area.
+        let ready = self.elements(dedup_words(cached.clone()), region);
+
+        // Keep the stale words inside the changed bands so the background pass can
+        // tell a genuinely-new word from one already on screen.
+        let stale_inside: Vec<Word> = cached
             .into_iter()
-            .filter(|w| !in_ranges(w.rect.center().y, &ranges))
+            .filter(|w| in_ranges(w.rect.center().y, &ranges))
             .collect();
-        let ready = self.elements(dedup_words(outside), region);
 
         // Phase 2: OCR the changed bands off-thread, splice them into the cache,
-        // and return the words that now live inside those bands.
+        // and fold in only the words that weren't already shown (new/changed text),
+        // so an unchanged-but-repainted region adds nothing and never flickers.
         let cache = std::sync::Arc::clone(&self.cache);
         let tess = self.tesseract.clone();
         let cancel = self.cancel.clone();
@@ -282,8 +290,12 @@ impl Detector for OcrDetector {
                     .filter(|w| in_ranges(w.rect.center().y, &ranges))
                     .collect()
             };
+            let added: Vec<Word> = dedup_words(inside)
+                .into_iter()
+                .filter(|w| !already_shown(w, &stale_inside))
+                .collect();
             Ok(words_to_elements(
-                dedup_words(inside),
+                added,
                 granularity,
                 grouping,
                 min_size,
@@ -300,6 +312,22 @@ impl Detector for OcrDetector {
 /// True when `y` falls in any of the (start, end) ranges.
 fn in_ranges(y: i32, ranges: &[(i32, i32)]) -> bool {
     ranges.iter().any(|&(a, b)| y >= a && y < b)
+}
+
+/// Maximum drift (px) between two boxes still considered the same word, absorbing
+/// OCR jitter while staying well under the gap to a neighbouring word.
+const SAME_WORD_TOL: i32 = 6;
+
+/// Whether `word` is already represented among the `shown` (stale, still-on-screen)
+/// words — same text and near-identical position. Used so the background re-OCR of
+/// a repainted region only adds words that genuinely appeared or changed, instead
+/// of duplicating ones already on screen.
+fn already_shown(word: &Word, shown: &[Word]) -> bool {
+    shown.iter().any(|s| {
+        s.text == word.text
+            && (s.rect.x - word.rect.x).abs() <= SAME_WORD_TOL
+            && (s.rect.y - word.rect.y).abs() <= SAME_WORD_TOL
+    })
 }
 
 /// Total screen height (px) covered by the bands, counting overlap once.
@@ -468,6 +496,26 @@ mod tests {
         let out = dedup_words(words);
         assert_eq!(out.len(), 3);
         assert_eq!(out.iter().filter(|w| w.text == "File").count(), 2);
+    }
+
+    #[test]
+    fn already_shown_matches_same_word_not_a_neighbour() {
+        let shown = vec![Word::new(Rect::new(100, 50, 40, 14), "File")];
+        // Same word, a couple px of OCR jitter -> already shown.
+        assert!(already_shown(
+            &Word::new(Rect::new(102, 51, 40, 14), "File"),
+            &shown
+        ));
+        // Same text but a different place on screen -> a distinct occurrence.
+        assert!(!already_shown(
+            &Word::new(Rect::new(400, 50, 40, 14), "File"),
+            &shown
+        ));
+        // Different text at the same spot (the region's text changed) -> new.
+        assert!(!already_shown(
+            &Word::new(Rect::new(100, 50, 40, 14), "Edit"),
+            &shown
+        ));
     }
 
     #[test]
