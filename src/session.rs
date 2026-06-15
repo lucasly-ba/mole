@@ -148,7 +148,7 @@ impl<'a> Session<'a> {
         screen: &Screen,
         t_cap: Duration,
     ) -> Result<Vec<Point>> {
-        let elements = self.detector.detect(screen)?;
+        let elements = self.detector.detect_phrases(screen)?;
         log::info!(
             "scan: capture {}ms -> {} elements (drag)",
             t_cap.as_millis(),

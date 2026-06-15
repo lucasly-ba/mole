@@ -45,12 +45,24 @@ use tesseract::Tesseract;
 /// of text so a line straddling a cut is fully seen by at least one strip.
 const TILE_OVERLAP: i32 = 80;
 
-/// Detector that reads the screen with Tesseract and hints text phrases.
+/// How recognised words are turned into hintable targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Granularity {
+    /// One target per word — every word on screen is reachable.
+    Word,
+    /// One target per phrase (a run of words on a line).
+    Phrase,
+}
+
+/// Detector that reads the screen with Tesseract and hints text.
 pub struct OcrDetector {
     tesseract: Tesseract,
     min_confidence: f32,
     min_element_size: i32,
     grouping: Grouping,
+    /// Whether on-demand hints are per word or per phrase (drag always uses
+    /// phrases via [`Detector::detect_phrases`]).
+    granularity: Granularity,
     tiles: usize,
     cache: Arc<Mutex<ScanCache>>,
     /// Lets another thread kill this detector's in-flight OCR. The on-demand path
@@ -78,6 +90,11 @@ impl OcrDetector {
             grouping: Grouping {
                 line_tolerance: config.ocr.line_tolerance,
                 max_word_gap: config.ocr.max_word_gap,
+            },
+            granularity: if config.ocr.hint_words {
+                Granularity::Word
+            } else {
+                Granularity::Phrase
             },
             tiles: config.ocr.tiles.max(1),
             cache,
@@ -113,12 +130,35 @@ impl OcrDetector {
     }
 
     fn elements(&self, words: Vec<Word>, region: Rect) -> Vec<Element> {
-        detect::finalize(
-            phrase::group(words, self.grouping),
+        words_to_elements(
+            words,
+            self.granularity,
+            self.grouping,
             self.min_element_size,
             region,
         )
     }
+}
+
+/// Turn recognised words into finalized targets at the requested granularity:
+/// each word as its own target, or words grouped into phrases. Free-standing so
+/// the background `detect_split` worker can call it without borrowing the
+/// detector across threads.
+fn words_to_elements(
+    words: Vec<Word>,
+    granularity: Granularity,
+    grouping: Grouping,
+    min_size: i32,
+    region: Rect,
+) -> Vec<Element> {
+    let raw = match granularity {
+        Granularity::Word => words
+            .into_iter()
+            .map(|w| Element::new(w.rect, w.text))
+            .collect(),
+        Granularity::Phrase => phrase::group(words, grouping),
+    };
+    detect::finalize(raw, min_size, region)
 }
 
 impl Detector for OcrDetector {
@@ -130,6 +170,20 @@ impl Detector for OcrDetector {
         let region = screen.bounds();
         let words = self.scan(screen, region)?;
         Ok(self.elements(words, region))
+    }
+
+    /// Always group into phrases, whatever the configured hint granularity, so
+    /// drag selection can grab a whole sentence.
+    fn detect_phrases(&self, screen: &Screen) -> Result<Vec<Element>> {
+        let region = screen.bounds();
+        let words = self.scan(screen, region)?;
+        Ok(words_to_elements(
+            words,
+            Granularity::Phrase,
+            self.grouping,
+            self.min_element_size,
+            region,
+        ))
     }
 
     /// Show the cached words for the unchanged part of the screen immediately,
@@ -203,6 +257,7 @@ impl Detector for OcrDetector {
         let min_conf = self.min_confidence;
         let min_size = self.min_element_size;
         let grouping = self.grouping;
+        let granularity = self.granularity;
         let pending: ScanRest = Box::new(move || {
             let fresh = ocr_bands(&tess, &rgb, width, region, &bands, min_conf, &cancel)?;
             let inside: Vec<Word> = {
@@ -216,8 +271,10 @@ impl Detector for OcrDetector {
                     .filter(|w| in_ranges(w.rect.center().y, &ranges))
                     .collect()
             };
-            Ok(detect::finalize(
-                phrase::group(dedup_words(inside), grouping),
+            Ok(words_to_elements(
+                dedup_words(inside),
+                granularity,
+                grouping,
                 min_size,
                 region,
             ))
@@ -400,6 +457,26 @@ mod tests {
         let out = dedup_words(words);
         assert_eq!(out.len(), 3);
         assert_eq!(out.iter().filter(|w| w.text == "File").count(), 2);
+    }
+
+    #[test]
+    fn word_granularity_keeps_each_word_phrase_merges_them() {
+        let grouping = Grouping {
+            line_tolerance: 0.5,
+            max_word_gap: 1.0,
+        };
+        let region = Rect::new(0, 0, 1000, 800);
+        let words = vec![
+            Word::new(Rect::new(10, 10, 40, 14), "File"),
+            Word::new(Rect::new(56, 10, 40, 14), "Edit"),
+        ];
+        // Word: two separate targets.
+        let per_word = words_to_elements(words.clone(), Granularity::Word, grouping, 6, region);
+        assert_eq!(per_word.len(), 2);
+        // Phrase: the two adjacent words merge into one.
+        let per_phrase = words_to_elements(words, Granularity::Phrase, grouping, 6, region);
+        assert_eq!(per_phrase.len(), 1);
+        assert_eq!(per_phrase[0].text, "File Edit");
     }
 
     #[test]

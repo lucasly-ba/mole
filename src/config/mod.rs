@@ -141,6 +141,12 @@ pub struct Ocr {
     /// re-scan and appears instantly. Costs a little CPU when the screen changes;
     /// set `false` to OCR only on demand.
     pub prewarm: bool,
+    /// Hint every individual word (`true`, the default) so every word on screen —
+    /// including the ends of lines — is reachable. Set `false` to instead hint
+    /// whole phrases (a run of words on a line), which shows fewer labels but only
+    /// lands you at the start of each phrase. Drag selection always works on
+    /// phrases regardless, so a whole sentence stays selectable.
+    pub hint_words: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -207,6 +213,7 @@ impl Default for Ocr {
             line_tolerance: 0.5,
             tiles: 4,
             prewarm: true,
+            hint_words: true,
         }
     }
 }
