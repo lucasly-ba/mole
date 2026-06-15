@@ -21,10 +21,8 @@ wherever you point.
 - **Hint every line of text** on screen and **teleport** the pointer to it.
 - **Click** — left, right, or double.
 - **Drag & select** between two hints, copied to the clipboard.
-- **Free movement** — `hjkl` pointer nudging, with a big step and optional
+- **Move** — `hjkl` pointer nudging, with a big step and optional
   hold-to-accelerate.
-- **Fast** — a background daemon keeps each trigger near-instant.
-- **Configurable** — one TOML file, hot-reloaded on save.
 
 ## Installation
 
@@ -58,7 +56,7 @@ command to a key in whatever runs your session — your window manager, desktop
 environment, or a hotkey daemon such as `sxhkd`.
 
 ```sh
-mole daemon            # start the background process (autostart this)
+mole daemon            # start the background process
 
 mole teleport          # hint, then move the pointer there
 mole click             # hint, then left-click
