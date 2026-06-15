@@ -7,9 +7,11 @@
 //!
 //! Pipeline: screenshot → PPM on stdin → `tesseract` → TSV on stdout.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
+use super::cancel::Cancel;
 use crate::error::{Error, Result};
 
 /// A configured handle to the OCR binary. Cheap to clone/rebuild on config
@@ -31,7 +33,15 @@ impl Tesseract {
     /// (`0` leaves it to Tesseract). When several instances run in parallel
     /// (tiled OCR), capping each one keeps them from oversubscribing the cores
     /// and fighting each other.
-    pub fn run(&self, ppm: Vec<u8>, threads: usize) -> Result<String> {
+    ///
+    /// `cancel` lets another thread kill this read in flight (so an on-demand
+    /// hint can preempt the background pre-warm): the child is shared behind a
+    /// lock that [`Cancel::abort`] can reach, while its output is read off the
+    /// lock so the killer is never blocked. An aborted run returns an error.
+    pub fn run(&self, ppm: Vec<u8>, threads: usize, cancel: &Cancel) -> Result<String> {
+        if cancel.aborted() {
+            return Err(Error::Ocr("OCR cancelled".into()));
+        }
         // `--psm 11` is "sparse text": find as much text as possible anywhere on
         // the image, which is what we want for a whole, busy desktop.
         let mut cmd = Command::new(&self.binary);
@@ -46,29 +56,44 @@ impl Tesseract {
             .spawn()
             .map_err(|e| Error::Ocr(format!("failed to spawn {}: {e}", self.binary)))?;
 
-        // Write on a separate thread so a large image can't deadlock against a
-        // full stdout pipe.
         let mut stdin = child
             .stdin
             .take()
             .ok_or_else(|| Error::Ocr("no stdin handle".into()))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Ocr("no stdout handle".into()))?;
+
+        // Write on a separate thread so a large image can't deadlock against a
+        // full stdout pipe. Dropping stdin closes it, signalling EOF to tesseract.
         let writer = std::thread::spawn(move || {
             let _ = stdin.write_all(&ppm);
-            // Dropping stdin here closes it, signalling EOF to tesseract.
         });
 
-        let output = child
-            .wait_with_output()
-            .map_err(|e| Error::Ocr(format!("tesseract failed: {e}")))?;
+        // Share the child so an [`Cancel::abort`] on another thread can kill it
+        // while we read its output here. Reading happens off the lock, so a
+        // killer that grabs the lock is never blocked waiting on us.
+        let child = Arc::new(Mutex::new(child));
+        let token = cancel.register(Arc::clone(&child));
+
+        let mut out = Vec::new();
+        let read = stdout.read_to_end(&mut out);
+        let status = child.lock().unwrap().wait();
+        cancel.unregister(token);
         let _ = writer.join();
 
-        if !output.status.success() {
-            return Err(Error::Ocr(format!(
-                "tesseract exited with {}",
-                output.status
-            )));
+        // A killed child surfaces as a read EOF plus a signal exit; report it as a
+        // cancellation rather than a spurious OCR failure.
+        if cancel.aborted() {
+            return Err(Error::Ocr("OCR cancelled".into()));
         }
-        String::from_utf8(output.stdout)
+        read.map_err(|e| Error::Ocr(format!("reading tesseract output: {e}")))?;
+        let status = status.map_err(|e| Error::Ocr(format!("tesseract failed: {e}")))?;
+        if !status.success() {
+            return Err(Error::Ocr(format!("tesseract exited with {status}")));
+        }
+        String::from_utf8(out)
             .map_err(|e| Error::Ocr(format!("tesseract produced non-UTF8 TSV: {e}")))
     }
 }

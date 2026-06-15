@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::config::{Config, ConfigWatcher};
-use crate::detect::ScanCache;
+use crate::detect::{Cancel, ScanCache};
 use crate::error::{Error, Result};
 use crate::session::Session;
 use crate::x11::Conn;
@@ -36,6 +36,9 @@ pub struct Daemon {
     /// Set while a hint/move interaction owns the screen, so the pre-warmer holds
     /// off (its capture would otherwise contain our own overlay).
     interaction_active: Arc<AtomicBool>,
+    /// Aborts the pre-warm's in-flight OCR when a hint starts, so the hint never
+    /// waits out a background read for the shared cache lock.
+    prewarm_cancel: Cancel,
 }
 
 impl Daemon {
@@ -48,6 +51,7 @@ impl Daemon {
             socket_path,
             scan_cache: Arc::new(Mutex::new(ScanCache::new())),
             interaction_active: Arc::new(AtomicBool::new(false)),
+            prewarm_cancel: Cancel::new(),
         }
     }
 
@@ -62,6 +66,7 @@ impl Daemon {
             Arc::clone(&self.config),
             Arc::clone(&self.scan_cache),
             Arc::clone(&self.interaction_active),
+            self.prewarm_cancel.clone(),
         );
 
         loop {
@@ -180,13 +185,17 @@ impl Daemon {
         let session = Session::new(conn, &cfg, Arc::clone(&self.scan_cache))?;
 
         // Tell the pre-warmer to hold off while we own the screen, so it doesn't
-        // capture (and cache) our own overlay.
+        // capture (and cache) our own overlay, and kill any read it has in flight
+        // so this hint never waits out a background OCR for the cache lock.
         self.interaction_active.store(true, Ordering::SeqCst);
+        self.prewarm_cancel.abort();
         let result = match cmd {
             Command::Hint(mode) => session.run_hint(mode),
             Command::FreeMove => session.run_free_move(),
             Command::Reload | Command::Ping => unreachable!("handled above"),
         };
+        // Clear the abort before re-enabling pre-warm so its next read runs.
+        self.prewarm_cancel.reset();
         self.interaction_active.store(false, Ordering::SeqCst);
         result
     }

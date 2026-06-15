@@ -16,7 +16,7 @@ pub mod ocr;
 
 use std::sync::{Arc, Mutex};
 
-pub use ocr::ScanCache;
+pub use ocr::{Cancel, ScanCache};
 
 use crate::capture::Screen;
 use crate::config::Config;
@@ -81,6 +81,17 @@ pub trait Detector {
 /// the indirection keeps `session` agnostic of which detector it drives.
 pub fn from_config(config: &Config, cache: Arc<Mutex<ScanCache>>) -> Box<dyn Detector> {
     Box::new(ocr::OcrDetector::new(config, cache))
+}
+
+/// Like [`from_config`] but driven by a shared [`Cancel`] token, so the caller
+/// can abort the detector's OCR in flight. Used by the background pre-warm, which
+/// a triggered hint preempts.
+pub fn from_config_with_cancel(
+    config: &Config,
+    cache: Arc<Mutex<ScanCache>>,
+    cancel: Cancel,
+) -> Box<dyn Detector> {
+    Box::new(ocr::OcrDetector::with_cancel(config, cache, cancel))
 }
 
 /// Post-process a raw element list into what the hint pipeline expects: drop
