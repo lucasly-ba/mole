@@ -27,10 +27,14 @@ use crate::x11::Conn;
 
 /// Quiet period the screen must hold before we warm, so we don't OCR every frame
 /// of an animation or scroll.
-const DEBOUNCE: Duration = Duration::from_millis(250);
+const DEBOUNCE: Duration = Duration::from_millis(120);
 /// Cap on how long a continuously-changing screen delays a warm, so video or a
 /// blinking cursor can't postpone it forever.
 const MAX_WAIT: Duration = Duration::from_millis(1200);
+/// If nothing has been warmed for this long, treat the next change as a one-off
+/// edit and start re-reading it *immediately* (don't wait out the debounce), so a
+/// quick change is being scanned before the user can even trigger a hint.
+const IDLE_REACT: Duration = Duration::from_millis(700);
 
 /// Spawn the pre-warm thread. `active` is set by the daemon while an interaction
 /// owns the screen, telling the warmer to hold off. Failures (no X, no DAMAGE)
@@ -63,6 +67,7 @@ fn run(
 
     // Warm once up front so even the first hint is ready.
     warm(&conn, &config, &cache, &active);
+    let mut last_warm = Instant::now();
 
     loop {
         // Block until something on screen changes.
@@ -71,8 +76,19 @@ fn run(
             _ => continue,
         }
         acknowledge(&conn, damage)?;
+
+        // A change after a quiet spell is almost always a single deliberate edit;
+        // start re-reading it at once rather than waiting out the debounce, so
+        // it's (being) cached before a hint is triggered. The settle pass below
+        // then catches anything that changed while this scan ran (and is cheap if
+        // nothing did, since the cache is already current).
+        if last_warm.elapsed() >= IDLE_REACT {
+            warm(&conn, &config, &cache, &active);
+        }
+
         wait_until_settled(&conn, damage)?;
         warm(&conn, &config, &cache, &active);
+        last_warm = Instant::now();
     }
 }
 
