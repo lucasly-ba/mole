@@ -9,8 +9,8 @@ prove out. If you're returning to this project after a while, start here.
 
 ## 1. The shape of the problem
 
-The goal (rooted in `mouseless_plan.pdf`): press a key, get Vimium-style
-two-letter labels over the screen, type a label, and the pointer goes there. The
+The goal (rooted in `mouseless_plan.pdf`): press a key, get two-letter labels
+over the screen, type a label, and the pointer goes there. The
 hard parts aren't the idea — they're the systems plumbing:
 
 - **What do you point at, and how do you find it?** This is the central design
