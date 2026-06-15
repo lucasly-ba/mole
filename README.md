@@ -146,9 +146,20 @@ While hints are showing: type a label to pick it, **Backspace** to correct,
 **Esc** to cancel. In `move` mode, `hjkl` nudges the pointer (Shift for big
 steps), **Esc**/**Enter** exits.
 
-### Example i3 binding
+### Binding it to a key
+
+mole has no hotkey of its own — you bind one in whatever runs your X11 session
+(your window manager, desktop environment, or `sxhkd`/`xbindkeys`). Point the key
+at `mole <command>`. Only a hint command runs OCR; the daemon does nothing (and
+never scans) until you press one.
+
+The mechanism is the same everywhere; i3 is shown here purely as a concrete
+example. In GNOME/KDE-on-Xorg you'd add the same `mole click` etc. as custom
+keyboard shortcuts in Settings; with a standalone hotkey daemon you'd map them in
+its config.
 
 ```i3config
+# Example for i3 — adapt the syntax to your WM/DE.
 exec_always --no-startup-id mole daemon
 
 bindsym $mod+a       exec --no-startup-id mole click
@@ -156,10 +167,6 @@ bindsym $mod+Shift+a exec --no-startup-id mole teleport
 bindsym $mod+g       exec --no-startup-id mole drag
 bindsym $mod+m       exec --no-startup-id mole move
 ```
-
-The same idea works in any WM: bind a key to `exec mole <command>`. Only a
-hint command runs OCR; the daemon does nothing (and never scans) until you press
-one.
 
 ### Running the daemon under systemd
 
@@ -230,6 +237,8 @@ OCR is the slow part of a hint. Three things make it fast:
   costs a little CPU while the screen is changing and stands down while a hint is
   on screen; set `prewarm = false` for purely on-demand scanning with no idle
   cost. Moving the mouse never triggers it (the cursor isn't part of the capture).
+  A hint always wins: if you trigger one while the pre-warm happens to be mid-scan,
+  it kills that background read so your hint never waits on it.
 - **Instant hints, even on change** — when you trigger a hint, the cached hints
   for the unchanged part of the screen appear immediately while only the changed
   regions are re-read in the background; their hints pop in a moment later,

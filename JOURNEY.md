@@ -67,6 +67,8 @@ src/
 │       ├── mod.rs        OcrDetector: wires the steps together
 │       ├── tesseract.rs  drive the tesseract subprocess (capture → TSV)
 │       ├── tsv.rs        parse TSV into confident word boxes (tested)
+│       ├── cache.rs      incremental cache: re-read only changed bands (tested)
+│       ├── cancel.rs     kill in-flight OCR so a hint preempts the pre-warm
 │       └── phrase.rs     group words into phrase targets (tested hard)
 ├── hint/
 │   ├── label.rs       prefix-free labels + live matching (tested hard)
@@ -198,18 +200,30 @@ Detection is OCR, end to end, split into small single-purpose steps under
   short settle debounce (`DEBOUNCE`, ~120ms) and an *immediate* re-read of the
   first change after a quiet spell (`IDLE_REACT`), so a one-off edit is being
   cached before you can trigger a hint. The result is that a hint is usually
-  ~instant. The remaining wobble is a *collision*: the on-demand hint and the
+  ~instant. The one remaining hazard is a *collision*: the on-demand hint and the
   background warm share one OCR-at-a-time lock (so they don't both fire tesseract
   and thrash the cores — letting them run together measured ~2× slower for both),
-  so if you trigger a hint exactly while the pre-warm is mid-re-read, the hint
-  waits for it (tens of ms in a gap, up to ~1s on a collision). Two non-fixes
-  were measured and rejected: reacting faster doesn't remove the collision, and
-  splitting into more, thinner bands doesn't help (tesseract has a fixed
+  so a hint triggered exactly while the pre-warm is mid-re-read would otherwise
+  wait for it (tens of ms in a gap, up to ~1s on a full collision). Two non-fixes
+  were measured and rejected first: reacting faster doesn't remove the collision,
+  and splitting into more, thinner bands doesn't help (tesseract has a fixed
   per-process startup cost, and a change spans more thin bands → more processes →
-  more overhead). The only way to close the collision is to let the hint preempt
-  the pre-warm (kill its in-flight OCR, adopt the change-baseline only on a
-  successful read so nothing goes stale) — a deliberate concurrency change left as
-  a future option, since the current behaviour is already "usually instant".
+  more overhead).
+
+  **Preempting the pre-warm** is what actually closes the collision, and it is
+  now done. When a hint starts, the daemon `abort()`s the pre-warm's
+  [`Cancel`](src/detect/ocr/cancel.rs) token, which kills its in-flight
+  `tesseract` children so it drops the cache lock immediately — the hint never
+  waits more than the time to reap a killed process. The subtle part is keeping a
+  killed read from corrupting the cache: planning a scan no longer adopts the
+  changed regions into the baseline; a band is adopted *only when its fresh words
+  are spliced back in* (`cache::ScanCache::splice`). So an aborted read — whose
+  bands were never spliced — leaves both the baseline and the cached words exactly
+  as they were, and those regions are simply re-planned on the next scan instead
+  of being silently marked "already read" and going stale. The child is shared
+  behind a lock that the aborter can reach, while its output is read off that lock,
+  so the killer is never itself blocked. The on-demand path carries its own
+  `Cancel` that is never aborted; only the background warm is preemptible.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.
