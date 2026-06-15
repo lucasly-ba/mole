@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. a force-push to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The path most contributors take: a plain cargo build against system
+  # libraries, exactly as the README's Install section describes. Keeps that path
+  # honest. Format and lint live here because they're fast and toolchain-only.
+  cargo:
+    name: cargo (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libcairo2-dev libglib2.0-dev tesseract-ocr tesseract-ocr-eng
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      # The X11/overlay tests need a live display, so skip them here — same set
+      # the flake's checkFlags skip in a sandbox. They're verified on a real
+      # session (see JOURNEY §5).
+      - name: Test
+        run: cargo test -- --skip x11:: --skip overlay
+
+  # The reproducible path: build and test through the flake, so the packaged
+  # binary and the dev shell are proven to keep working.
+  nix:
+    name: nix (build, flake check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # `nix build` runs the package's checkPhase (the sandboxed test suite).
+      - name: Build (runs sandboxed tests)
+        run: nix build -L
+
+      - name: Flake check
+        run: nix flake check -L
