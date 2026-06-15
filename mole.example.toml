@@ -61,9 +61,10 @@ max_word_gap = 1.0
 # differ by at most this fraction of their text height.
 line_tolerance = 0.5
 # How many horizontal strips to split the screen into and OCR in parallel.
-# Tesseract is single-threaded per image, so on a multi-core machine this is the
-# biggest speed lever — 4 roughly halves scan time on a wide display. Set to 1
-# to disable tiling (a single pass over the whole screen).
+# Tesseract is single-threaded per image, so on a multi-core machine this is a
+# big speed lever — 4 roughly halves a full scan on a wide display. More isn't
+# always better: each strip is a separate tesseract process with fixed startup
+# cost, so too many strips adds overhead. Set to 1 to disable tiling.
 tiles = 4
 # Keep the OCR cache warm in the background: watch the screen (X DAMAGE) and
 # re-read only the strips that change, once it settles. A hint on a screen you've
