@@ -108,7 +108,8 @@ the systems modules together; `daemon` drives `session`.
   by a **boost** key for crossing the screen — pure arithmetic with sub-pixel
   carry, unit-tested away from any X11. The session loop ticks it at ~125 Hz and
   warps the pointer by the per-frame delta. **Remappable keys**
-  (`move_left`/`down`/`up`/`right`, default hjkl) steer; action keys click,
+  (`move_left`/`down`/`up`/`right`, default hjkl) steer — and the **arrow keys**
+  always do too (decoded as `KeyInput::Left`/`Right`/`Up`/`Down`); action keys click,
   double-click, right-click, and toggle a drag-and-copy — so move mode is a full
   pointer, not just a cursor nudger.
 

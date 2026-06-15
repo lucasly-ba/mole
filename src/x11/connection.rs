@@ -28,6 +28,11 @@ pub enum KeyInput {
     Escape,
     Backspace,
     Enter,
+    /// Arrow keys, so free-move can be steered with them as well as hjkl.
+    Left,
+    Right,
+    Up,
+    Down,
     /// Anything we don't special-case.
     Other,
 }
@@ -85,6 +90,10 @@ impl Conn {
             0xff1b => KeyInput::Escape,
             0xff08 => KeyInput::Backspace,
             0xff0d | 0xff8d => KeyInput::Enter, // Return, KP_Enter
+            0xff51 => KeyInput::Left,           // arrow keys
+            0xff52 => KeyInput::Up,
+            0xff53 => KeyInput::Right,
+            0xff54 => KeyInput::Down,
             // Latin-1 printable range maps straight to a char.
             0x20..=0x7e | 0xa0..=0xff => char::from_u32(sym)
                 .map(|c| KeyInput::Char { c, shift: shifted })

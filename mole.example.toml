@@ -28,13 +28,13 @@ drag = "a"              # tap to start a drag, tap again to drop it (copies the 
 [movement]
 # Free-move glides like a real mouse rather than jumping a fixed step.
 # Glide speed (px/second) the moment a direction is pressed — the base
-# sensitivity for fine positioning.
-speed = 1200.0
+# sensitivity for fine positioning. Raise for a faster pointer.
+speed = 700.0
 # Hard ceiling (px/second) the glide accelerates to while a direction is held.
-max_speed = 5000.0
+max_speed = 3200.0
 # Speed multiplier applied per second a direction stays held, so the pointer
 # glides faster the longer you hold it. 1.0 disables acceleration.
-acceleration = 4.0
+acceleration = 3.0
 # Speed multiplier while the speed_boost key is held. 1.0 disables the boost.
 boost = 2.5
 
