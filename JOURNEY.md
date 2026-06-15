@@ -122,6 +122,14 @@ the systems modules together; `daemon` drives `session`.
     without a compositor" problem entirely — there is no overlay to paint — and
     synthetic clicks fall straight through to the apps beneath, since nothing is
     covering them.
+  - **A visible notice.** Because the grab is windowless, move mode is otherwise
+    invisible — and since the grab suppresses the window manager's own hotkeys
+    (including the one that launched mole), a user who forgot they were in it
+    would find their `mole teleport` key doing nothing. So a small hint-coloured
+    legend (`render::hud` + a non-interactive `x11::Hud` window) sits at the top
+    of the screen for the duration, labelled with the live key bindings and "Esc:
+    exit". It covers only its own rectangle, so the desktop and pointer stay live
+    underneath.
   - **Auto-repeat collapse.** Holding a key, the X server (without detectable
     auto-repeat) fakes a stream of `Release`+`Press` pairs sharing a timestamp.
     `KeyboardGrab::drain` drops a `Release` immediately followed by a same-key

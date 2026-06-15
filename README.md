@@ -79,8 +79,10 @@ While hints are showing: type a label to pick it, **Backspace** to correct,
 In `move` mode the pointer glides over the live desktop: `hjkl` **or the arrow
 keys** steer (hold to accelerate), **Space** boosts the speed, **f**/**d**/**s**
 left-/right-/double-click, and **a** toggles a drag — tap to start, glide, tap
-again to drop and copy the selection. **Esc** exits. The letter keys are
-remappable in `[keys]`.
+again to drop and copy the selection. **Esc** exits. A small legend at the top of
+the screen shows these the whole time move mode is active (the keyboard is grabbed
+while it is, so your other mole hotkeys pause until you press Esc). The letter
+keys are remappable in `[keys]`.
 
 ### Autostart
 
