@@ -368,7 +368,12 @@ mod tests {
         rewrite_rows(&mut tweaked, W, 400, 460);
         let bands = c.plan(&tweaked, W, H, TILES, 20);
         for &b in &bands {
-            c.splice(&tweaked, 0, b, vec![Word::new(Rect::new(0, 430, 5, 5), "new")]);
+            c.splice(
+                &tweaked,
+                0,
+                b,
+                vec![Word::new(Rect::new(0, 430, 5, 5), "new")],
+            );
         }
         let words = c.all_words();
         let texts: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
@@ -392,7 +397,11 @@ mod tests {
         // Abort: no splice happens. The next plan over the same pixels must still
         // see the change (baseline was not moved).
         let again = c.plan(&tweaked, W, H, TILES, 20);
-        assert_eq!(again.len(), 1, "an un-spliced change is re-planned, not lost");
+        assert_eq!(
+            again.len(),
+            1,
+            "an un-spliced change is re-planned, not lost"
+        );
     }
 
     #[test]
