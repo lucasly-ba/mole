@@ -80,10 +80,8 @@ cp contrib/mole.service ~/.config/systemd/user/
 systemctl --user enable --now mole.service
 ```
 
-The daemon needs `DISPLAY` and `XAUTHORITY`. Most login managers export these
-into the systemd user environment; if yours doesn't, uncomment the
-`Environment=` lines in the unit, or run
-`systemctl --user import-environment DISPLAY XAUTHORITY` from your autostart.
+If the daemon can't reach your screen, your session isn't passing `DISPLAY` /
+`XAUTHORITY` through to systemd — the unit file's comments show the one-line fix.
 
 ## Configuration
 
