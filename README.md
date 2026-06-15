@@ -20,6 +20,8 @@ wherever you point.
 
 - **Hint every word** on screen and **teleport** the pointer to it (set
   `ocr.hint_words = false` for fewer, phrase-level hints instead).
+- **Hint icons & buttons** that have no text too — toolbar icons, favicons,
+  window controls — so you can click them by keyboard (`ocr.hint_icons`).
 - **Click** — left, right, or double.
 - **Drag & select** a whole sentence — each phrase gets a hint at its start and
   its end — copied straight to the clipboard.
@@ -131,7 +133,8 @@ font_size = 13.0
 
 - **X11 only** for now; Wayland is planned.
 - **Tiny or stylised text** can be missed or misread.
-- **Targets with no text** (icon-only toolbars, games) aren't hintable yet.
+- **Icon hints are heuristic** — found from pixel contrast, so a busy image may
+  get a stray hint and a very faint control may be missed (`ocr.hint_icons`).
 
 ## Contributing
 

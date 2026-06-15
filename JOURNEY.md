@@ -64,6 +64,7 @@ src/
 │   └── grab.rs        windowless keyboard grab for free-move
 ├── detect/
 │   ├── mod.rs         Element + Detector trait + finalize() (tested)
+│   ├── icon.rs        pixel-based icon/button detection (tested)
 │   └── ocr/
 │       ├── mod.rs        OcrDetector: wires the steps together
 │       ├── tesseract.rs  drive the tesseract subprocess (capture → TSV)
@@ -264,6 +265,19 @@ Detection is OCR, end to end, split into small single-purpose steps under
   (`Detector::detect_phrases`) regardless of the setting, so a whole sentence
   stays selectable. The grouping is geometric — no pixels re-read — so it's
   deterministic and exhaustively unit-tested.
+- **§3.3b Icon hints** → `detect/icon.rs` (`ocr.hint_icons`, on by default). Lots
+  of clickable UI carries no text — toolbar icons, favicons, window controls — so
+  text hints alone can't reach it. Rather than reach for OpenCV, this finds them
+  cheaply from the pixels already captured: lay an 8px grid, mark each cell whose
+  lightest-to-darkest spread clears a threshold (an *edge*; flat fills are
+  ignored), flood-fill the marked cells into 4-connected blobs, and keep the ones
+  that look like a control — icon-sized (16–80px), compact (fills enough of its
+  box), sitting in quiet padding (the ring around it is mostly edge-free, which is
+  what separates a real icon from a fragment buried in text), and not overlapping
+  a box OCR already hinted. The pass subsamples every other pixel, so it's cheap
+  enough to run on every hint. It's a heuristic — tuned live until a dense dev
+  desktop dropped from ~700 candidates to ~140 real ones — so it's honest about
+  the odd stray hint on a busy image, and `hint_icons = false` turns it off.
 - **§3.4 Hint generation** → `hint/label.rs`. The algorithm grows a breadth-first
   frontier so labels are **prefix-free** (the instant your keys equal a label, the
   choice is unambiguous — no Enter needed) and as short as possible. Live matching

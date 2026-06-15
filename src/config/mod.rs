@@ -147,6 +147,12 @@ pub struct Ocr {
     /// lands you at the start of each phrase. Drag selection always works on
     /// phrases regardless, so a whole sentence stays selectable.
     pub hint_words: bool,
+    /// Also hint icon-only clickable things that carry no text — toolbar buttons,
+    /// tab favicons, window controls — found from the pixels (compact
+    /// high-contrast regions OCR didn't cover). `true` by default; set `false` if
+    /// you only want text hints. Heuristic, so it may add the odd stray hint on a
+    /// busy image.
+    pub hint_icons: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -214,6 +220,7 @@ impl Default for Ocr {
             tiles: 4,
             prewarm: true,
             hint_words: true,
+            hint_icons: true,
         }
     }
 }
