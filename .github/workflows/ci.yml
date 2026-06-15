@@ -47,7 +47,8 @@ jobs:
       # the flake's checkFlags skip in a sandbox. They're verified on a real
       # session (see JOURNEY §5).
       - name: Test
-        run: cargo test -- --skip x11:: --skip overlay
+        run: |
+          cargo test -- --skip x11:: --skip overlay
 
   # The reproducible path: build and test through the flake, so the packaged
   # binary and the dev shell are proven to keep working.

@@ -2,11 +2,9 @@
 
 [![CI](https://github.com/lucasly-ba/mole/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasly-ba/mole/actions/workflows/ci.yml)
 
-**Keyboard-only mouse navigation for Linux/X11.** Hit a keybinding and Mole drops
-a two-letter label on every line of text on your screen — a menu entry, a
-paragraph, a button, a URL. Type the letters and the pointer jumps there, where
-you can click, drag, or keep moving by keyboard. It's [Vimium]'s hint mode for
-your whole desktop instead of one browser tab.
+**Keyboard-only mouse navigation for Linux/X11.** Press a key and Mole labels
+every line of text on your screen with two letters. Type a label and the pointer
+teleports there — then click, drag, or keep moving by keyboard.
 
 The name fits twice over: **mo**use-**le**ss, and a mole tunnels straight to
 wherever you point.
@@ -121,5 +119,3 @@ design and the reasoning behind the code, read [JOURNEY.md](JOURNEY.md).
 ## License
 
 [MIT](LICENSE) © Lucas Ly Ba
-
-[Vimium]: https://github.com/philc/vimium
