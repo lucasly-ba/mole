@@ -210,7 +210,7 @@ impl<'a> Session<'a> {
                     matcher.pop();
                     self.repaint(overlay, backdrop, boxes, screen, matcher.typed())?;
                 }
-                OverlayInput::Key(KeyInput::Char(c)) => {
+                OverlayInput::Key(KeyInput::Char { c, .. }) => {
                     match matcher.push(c.to_ascii_lowercase()) {
                         MatchState::Selected(idx) => return Ok(Some(boxes[idx].target)),
                         MatchState::Pending => {
@@ -312,7 +312,7 @@ impl<'a> Session<'a> {
                     matcher.pop();
                     self.repaint(overlay, backdrop, &boxes, screen, matcher.typed())?;
                 }
-                Some(OverlayInput::Key(KeyInput::Char(c))) => {
+                Some(OverlayInput::Key(KeyInput::Char { c, .. })) => {
                     match matcher.push(c.to_ascii_lowercase()) {
                         MatchState::Selected(idx) => break Some(boxes[idx].target),
                         MatchState::Pending => {
@@ -393,8 +393,8 @@ impl<'a> Session<'a> {
                 OverlayInput::Key(KeyInput::Escape)
                 | OverlayInput::Key(KeyInput::Enter)
                 | OverlayInput::Click(_) => break,
-                OverlayInput::Key(KeyInput::Char(c)) => {
-                    let large = c.is_uppercase();
+                OverlayInput::Key(KeyInput::Char { c, shift }) => {
+                    let large = shift;
                     let lc = c.to_ascii_lowercase();
                     let dir = if lc == left {
                         Some(Dir::Left)
