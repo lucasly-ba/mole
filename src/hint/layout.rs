@@ -3,8 +3,10 @@
 //! Each detected element gets a small label box anchored at its top-left corner.
 //! When boxes would collide (dense UIs, lists), [`place_hints`] nudges later
 //! boxes to nearby free positions so labels stay readable. The point the cursor
-//! ultimately jumps to is the element centre, kept separately from where the box
-//! is drawn.
+//! ultimately jumps to is the *start* of the element's text (its left edge,
+//! vertically centred), not the phrase centre: a phrase target spans a whole
+//! line, and its midpoint can land in a gap between words or past the clickable
+//! part — the first glyphs are where you actually want to click.
 
 use crate::detect::Element;
 use crate::geometry::{Point, Rect};
@@ -19,6 +21,14 @@ pub struct HintBox {
     pub rect: Rect,
     /// Where the pointer should land when this hint is chosen.
     pub target: Point,
+}
+
+/// The point to jump to for an element: the start of its text — the left edge,
+/// vertically centred, nudged in by about half a line height so it lands on the
+/// first glyph rather than the very edge (or a gap before it).
+fn text_start(rect: Rect) -> Point {
+    let inset = (rect.height / 2).min(rect.width / 2);
+    Point::new(rect.x + inset, rect.y + rect.height / 2)
 }
 
 /// Estimate the pixel size of a label box for a monospace-ish font.
@@ -56,9 +66,25 @@ pub fn place_hints(
     min_gap: i32,
     screen: Rect,
 ) -> Vec<HintBox> {
+    place_hints_avoiding(elements, labels, font_size, min_gap, screen, &[])
+}
+
+/// Like [`place_hints`], but lay the new boxes out *around* `existing` ones
+/// without moving them — used when late-arriving (background-OCR'd) hints are
+/// added to an overlay that's already up. Returns only the newly placed boxes;
+/// their `index` continues after `existing`.
+pub fn place_hints_avoiding(
+    elements: &[Element],
+    labels: &[String],
+    font_size: f64,
+    min_gap: i32,
+    screen: Rect,
+    existing: &[HintBox],
+) -> Vec<HintBox> {
     assert_eq!(elements.len(), labels.len(), "one label per element");
 
-    let mut placed: Vec<HintBox> = Vec::with_capacity(elements.len());
+    let base_index = existing.len();
+    let mut placed: Vec<HintBox> = existing.to_vec();
 
     for (i, (el, label)) in elements.iter().zip(labels).enumerate() {
         let (w, h) = box_size(label, font_size);
@@ -95,14 +121,15 @@ pub fn place_hints(
         });
 
         placed.push(HintBox {
-            index: i,
+            index: base_index + i,
             label: label.clone(),
             rect,
-            target: el.rect.center(),
+            target: text_start(el.rect),
         });
     }
 
-    placed
+    // Return only the boxes we just added, leaving `existing` untouched.
+    placed.split_off(base_index)
 }
 
 #[cfg(test)]
@@ -125,11 +152,13 @@ mod tests {
     }
 
     #[test]
-    fn target_is_element_center_not_box() {
-        let els = [elem(100, 100, 40, 20)];
+    fn target_is_the_start_of_the_text_not_the_centre() {
+        let els = [elem(100, 100, 400, 20)];
         let labels = vec!["aa".to_string()];
         let boxes = place_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 1920, 1080));
-        assert_eq!(boxes[0].target, Point::new(120, 110));
+        // Left edge + half a line height in, vertically centred — near the first
+        // glyph, well left of the phrase centre (which would be x=300).
+        assert_eq!(boxes[0].target, Point::new(110, 110));
     }
 
     #[test]

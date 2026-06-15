@@ -146,22 +146,70 @@ Detection is OCR, end to end, split into small single-purpose steps under
   text + heavily overlapping box, keeping the fuller one) before grouping.
   **Caching + pre-warm** → `ocr/cache.rs` + `daemon/prewarm.rs`. Even halved, a
   full scan is too slow to do on every hint, and most hints land on a screen that
-  barely changed. So those same strips double as a change cache: the daemon owns
-  one `ScanCache`, and each scan only re-OCRs strips whose pixels changed since
-  last time, reusing cached words for the rest — a hint on a static screen does
-  no OCR at all. Crucially the change test is by *magnitude*, not an exact hash:
-  a blinking caret or a ticking clock flips a handful of pixels and must be
-  ignored, or a dense strip would never stay clean (an exact hash made the cache
-  churn constantly in testing). On top of that, a background thread watches the
-  whole screen with the X DAMAGE extension and re-reads changed strips once the
-  screen settles, so the cache is usually already current when you trigger — the
-  hint then appears with no scan at all. DAMAGE works here even with no
-  compositor (verified by probe), and reports drawing only, not pointer motion,
-  so moving the mouse never wakes it. The whole scan holds the cache lock so the
-  on-demand hint and the background warm never OCR at once (which would
-  oversubscribe the cores); pre-warm also stands down while an interaction owns
-  the screen, so it never captures mole's own overlay. `ocr.prewarm = false`
-  turns the background thread off for a purely on-demand, zero-idle-cost mode.
+  barely changed. So the daemon owns one `ScanCache` that keeps the last scan's
+  whole-screen pixels (the baseline) plus the flat list of words found. Each scan
+  diffs the new capture against the baseline and re-OCRs **only the regions that
+  changed**, splicing the fresh words in (words inside a re-read region replaced,
+  everything outside kept) — a hint on a static screen does no OCR at all.
+
+  Two things make this robust on a real desktop. First, change is judged by
+  *locality*, not an exact hash: the screen is a grid of small cells, a cell only
+  counts as changed when a real fraction of its pixels differ, and the screen is
+  only re-read when more than a couple of cells changed. A ticking clock or a
+  blinking text caret is one or two cells and is ignored; a scroll or a typed-out
+  line is many and is caught. (An exact hash, or a flat pixel count, made every
+  flicker re-OCR a whole region, so the cache never settled.) Second, the work is
+  scoped to **tight bands**: the changed cells' rows are clustered into contiguous
+  runs (padded by a margin so text straddling an edge is fully inside), and only
+  those full-width bands are OCR'd — a chat message near the bottom re-reads a
+  thin band, not half the display. A cold scan (no baseline, or after a resize)
+  tiles the whole screen into `tiles` overlapping bands; a very large change is
+  likewise split into chunks. Either way the bands run in parallel, overlap so a
+  cut line is whole in one of them, and `dedup_words` removes the resulting
+  duplicates.
+
+  On top of that, a background thread watches the whole screen with the X DAMAGE
+  extension and re-reads changed bands once the screen settles, so the cache is
+  usually already current when you trigger — the hint then appears with no scan at
+  all. DAMAGE works here even with no compositor (verified by probe), and reports
+  drawing only, not pointer motion, so moving the mouse never wakes it. The whole
+  scan holds the cache lock so the on-demand hint and the background warm never
+  OCR at once (which would oversubscribe the cores); pre-warm also stands down
+  while an interaction owns the screen, so it never captures mole's own overlay.
+  `ocr.prewarm = false` turns the background thread off for a purely on-demand,
+  zero-idle-cost mode.
+
+  Finally, even when something *did* change, a hint needn't wait for it.
+  `Detector::detect_split` returns the cached words for the unchanged part of the
+  screen **immediately**, plus a closure that re-OCRs the changed bands. The
+  session (`select_incremental`) shows the ready hints at once, runs the closure
+  on a worker thread, and folds the late hints in when they arrive — placed
+  around the existing ones, with labels drawn from a reserved pool so the labels
+  already on screen never shift (and a key already typed is replayed onto the
+  larger set). So a hint over a screen with one busy corner appears instantly for
+  everything else, and the corner's hints pop in a fraction of a second later.
+  This split only applies to *localised* change: when the changed bands cover
+  more than half the screen (a fresh window, a workspace switch) there's no
+  meaningful cached part to show, and a half-filled overlay just looks broken —
+  so `detect_split` re-reads the whole thing up front and shows the complete set
+  at once instead of dribbling it in.
+
+  **Latency, honestly.** To keep the cache current the pre-warm reacts quickly: a
+  short settle debounce (`DEBOUNCE`, ~120ms) and an *immediate* re-read of the
+  first change after a quiet spell (`IDLE_REACT`), so a one-off edit is being
+  cached before you can trigger a hint. The result is that a hint is usually
+  ~instant. The remaining wobble is a *collision*: the on-demand hint and the
+  background warm share one OCR-at-a-time lock (so they don't both fire tesseract
+  and thrash the cores — letting them run together measured ~2× slower for both),
+  so if you trigger a hint exactly while the pre-warm is mid-re-read, the hint
+  waits for it (tens of ms in a gap, up to ~1s on a collision). Two non-fixes
+  were measured and rejected: reacting faster doesn't remove the collision, and
+  splitting into more, thinner bands doesn't help (tesseract has a fixed
+  per-process startup cost, and a change spans more thin bands → more processes →
+  more overhead). The only way to close the collision is to let the hint preempt
+  the pre-warm (kill its in-flight OCR, adopt the change-baseline only on a
+  successful read so nothing goes stale) — a deliberate concurrency change left as
+  a future option, since the current behaviour is already "usually instant".
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.
@@ -177,7 +225,11 @@ Detection is OCR, end to end, split into small single-purpose steps under
   frontier so labels are **prefix-free** (the instant your keys equal a label, the
   choice is unambiguous — no Enter needed) and as short as possible. Live matching
   narrows candidates per keystroke; a dead-end key is rejected without being
-  consumed.
+  consumed. Placement is `hint/layout.rs`; the chosen point is the **start of the
+  element's text** (left edge, vertically centred, nudged in to the first glyph),
+  not the phrase centre — a phrase target spans a whole line and its midpoint can
+  fall in a gap between words or past the clickable part, whereas the first glyphs
+  are reliably on the thing you meant to click.
 
 `detect/mod.rs` keeps a one-method `Detector` trait (so the pipeline is testable
 with fakes and open to a future backend) and a shared `finalize()` pass that drops
@@ -235,8 +287,9 @@ tests live inline (`#[cfg(test)]`) so they can reach private helpers.
 the isolated unit tests can't see. A `FakeDetector` implementing the public
 `Detector` trait feeds the exact chain `run_hint` uses — detect → `generate_labels`
 → `place_hints` → `HintMatcher` — and asserts that typing a label lands on the
-right *element centre* (not the label-box corner), that every label among 30
-elements is reachable, that stacked elements stay individually selectable, that a
+right *text start* (not the label-box corner or the phrase centre), that every
+label among 30 elements is reachable, that stacked elements stay individually
+selectable, that a
 dead-end keystroke doesn't strand the user, and that edge boxes clamp on-screen.
 All display-free, so it runs in the sandbox alongside the unit tests.
 

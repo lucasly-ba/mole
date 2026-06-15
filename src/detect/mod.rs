@@ -42,6 +42,20 @@ impl Element {
     }
 }
 
+/// The slow remainder of a [`Detector::detect_split`]: run it (off the main
+/// thread) to get the elements that weren't ready immediately. `Send` so it can
+/// be handed to a worker thread; `FnOnce` because it consumes its captured work.
+pub type ScanRest = Box<dyn FnOnce() -> Result<Vec<Element>> + Send>;
+
+/// A scan split into what's ready now and what still needs work.
+pub struct Scan {
+    /// Elements available immediately (e.g. from cache) — shown right away.
+    pub ready: Vec<Element>,
+    /// If present, the rest of the scan to finish in the background; its result
+    /// is the *additional* elements to fold in once ready.
+    pub pending: Option<ScanRest>,
+}
+
 /// A source of hintable elements.
 pub trait Detector {
     /// Find all hintable targets visible on `screen`.
@@ -49,6 +63,17 @@ pub trait Detector {
 
     /// A short name for logs.
     fn name(&self) -> &'static str;
+
+    /// Like [`Detector::detect`], but split into the part that can be shown
+    /// immediately and a background remainder. The default does everything up
+    /// front (nothing pending); the OCR backend returns cached words now and the
+    /// re-read of changed regions as the pending part.
+    fn detect_split(&self, screen: &Screen) -> Result<Scan> {
+        Ok(Scan {
+            ready: self.detect(screen)?,
+            pending: None,
+        })
+    }
 }
 
 /// Build the detector described by `config`, sharing `cache` so OCR results

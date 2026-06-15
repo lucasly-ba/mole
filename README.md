@@ -215,20 +215,29 @@ targets.
 
 OCR is the slow part of a hint. Three things make it fast:
 
-- **Parallel tiling** — Tesseract is single-threaded per image, so mole splits
-  the screen into `tiles` horizontal strips and scans them in parallel. On a
-  multi-core machine `tiles = 4` roughly halves the wait on a wide display
-  (`tiles = 1` disables it).
-- **Incremental cache** — the daemon remembers each strip and re-reads only the
-  ones whose pixels actually changed since the last hint, so a hint on a screen
-  you've been looking at does little or no OCR. Tiny changes (a blinking caret, a
-  ticking clock) are ignored so the cache stays warm.
+- **Parallel OCR** — Tesseract is single-threaded per image, so mole OCRs the
+  screen as `tiles` horizontal bands in parallel. On a multi-core machine
+  `tiles = 4` roughly halves a full scan on a wide display (`tiles = 1` disables
+  parallelism).
+- **Incremental cache** — the daemon remembers the words it found and, on the
+  next hint, re-reads only the *regions that changed* — a tight band around an
+  edit, not the whole screen — splicing the new words in and keeping the rest. A
+  hint on a screen you've been looking at does little or no OCR. Tiny changes (a
+  blinking caret, a ticking clock) are ignored so the cache stays warm.
 - **Background pre-warm** (`prewarm = true`) — a background thread watches the
   screen (via X DAMAGE) and refreshes the cache once it settles, so the scan is
   usually already done before you trigger and the hints appear instantly. It
   costs a little CPU while the screen is changing and stands down while a hint is
   on screen; set `prewarm = false` for purely on-demand scanning with no idle
   cost. Moving the mouse never triggers it (the cursor isn't part of the capture).
+- **Instant hints, even on change** — when you trigger a hint, the cached hints
+  for the unchanged part of the screen appear immediately while only the changed
+  regions are re-read in the background; their hints pop in a moment later,
+  without shifting the labels already on screen.
+
+None of this is tied to a particular display: the capture, the cell grid, and the
+tiles are all computed from your actual screen size, so the same behaviour applies
+on any resolution.
 
 ## How it works
 
