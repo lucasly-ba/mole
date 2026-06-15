@@ -210,11 +210,22 @@ impl Detector for OcrDetector {
             });
         }
 
-        // When most of the screen changed (a fresh window, a workspace switch),
-        // there's little point showing a sliver of cached hints and dribbling the
-        // rest in — it just looks half-broken. Re-read it all up front and show
-        // the complete set at once.
-        if band_coverage(&bands) * 2 > height {
+        // Only when *almost the whole screen* changed (a workspace switch, a fresh
+        // fullscreen window) is the cache too stale to be worth showing — the
+        // cached hints would point at text that's gone. There we re-read
+        // everything up front and show the complete, correct set at once. For any
+        // lesser change we keep the cached hints on screen instantly and fold the
+        // re-OCR'd regions in (the two-wave path below), so a hint feels instant
+        // even when a chunk of the screen moved. (Threshold: > ~85% of height.)
+        let coverage = band_coverage(&bands);
+        // `height.max(1)` guards the divide without an if-expression (which two
+        // rustfmt versions format differently); coverage is 0 when height is.
+        let pct = coverage * 100 / height.max(1);
+        log::debug!(
+            "detect_split: {} band(s), {pct}% of height changed",
+            bands.len()
+        );
+        if coverage * 100 > height * 85 {
             let all = {
                 let fresh = ocr_bands(
                     &self.tesseract,
