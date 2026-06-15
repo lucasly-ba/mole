@@ -179,9 +179,9 @@ impl Default for Keys {
 impl Default for Movement {
     fn default() -> Self {
         Movement {
-            speed: 1200.0,
-            max_speed: 5000.0,
-            acceleration: 4.0,
+            speed: 700.0,
+            max_speed: 3200.0,
+            acceleration: 3.0,
             boost: 2.5,
         }
     }
@@ -333,7 +333,7 @@ mod tests {
         let text = include_str!("../../mole.example.toml");
         let cfg = Config::from_toml(text).expect("example config should parse");
         assert_eq!(cfg.keys.hint_alphabet, "asdfghjkl");
-        assert_eq!(cfg.movement.max_speed, 5000.0);
+        assert_eq!(cfg.movement.max_speed, 3200.0);
         assert_eq!(cfg.ocr.language, "eng");
     }
 

@@ -419,11 +419,31 @@ impl<'a> Session<'a> {
         let result = loop {
             let mut quit = false;
             for ev in grab.drain()? {
-                let lc = match ev.input {
+                // Arrow keys steer alongside the configured letter keys.
+                match ev.input {
                     KeyInput::Escape => {
                         quit = true;
                         continue;
                     }
+                    KeyInput::Left => {
+                        hold_left = ev.pressed;
+                        continue;
+                    }
+                    KeyInput::Right => {
+                        hold_right = ev.pressed;
+                        continue;
+                    }
+                    KeyInput::Up => {
+                        hold_up = ev.pressed;
+                        continue;
+                    }
+                    KeyInput::Down => {
+                        hold_down = ev.pressed;
+                        continue;
+                    }
+                    _ => {}
+                }
+                let lc = match ev.input {
                     KeyInput::Char { c, .. } => c.to_ascii_lowercase(),
                     _ => continue,
                 };
