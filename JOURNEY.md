@@ -193,6 +193,23 @@ Detection is OCR, end to end, split into small single-purpose steps under
   meaningful cached part to show, and a half-filled overlay just looks broken —
   so `detect_split` re-reads the whole thing up front and shows the complete set
   at once instead of dribbling it in.
+
+  **Latency, honestly.** To keep the cache current the pre-warm reacts quickly: a
+  short settle debounce (`DEBOUNCE`, ~120ms) and an *immediate* re-read of the
+  first change after a quiet spell (`IDLE_REACT`), so a one-off edit is being
+  cached before you can trigger a hint. The result is that a hint is usually
+  ~instant. The remaining wobble is a *collision*: the on-demand hint and the
+  background warm share one OCR-at-a-time lock (so they don't both fire tesseract
+  and thrash the cores — letting them run together measured ~2× slower for both),
+  so if you trigger a hint exactly while the pre-warm is mid-re-read, the hint
+  waits for it (tens of ms in a gap, up to ~1s on a collision). Two non-fixes
+  were measured and rejected: reacting faster doesn't remove the collision, and
+  splitting into more, thinner bands doesn't help (tesseract has a fixed
+  per-process startup cost, and a change spans more thin bands → more processes →
+  more overhead). The only way to close the collision is to let the hint preempt
+  the pre-warm (kill its in-flight OCR, adopt the change-baseline only on a
+  successful read so nothing goes stale) — a deliberate concurrency change left as
+  a future option, since the current behaviour is already "usually instant".
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.
