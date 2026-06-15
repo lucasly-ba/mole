@@ -93,11 +93,18 @@ the annotated default, or copy [`mole.example.toml`](mole.example.toml).
 
 ```toml
 [keys]
-hint_alphabet = "asdfghjkl"   # home-row keys used to build labels
+hint_alphabet = "asdfghjkl"   # keys used to build hint labels
+
+# Movement keys for `mole move`. Defaults are hjkl; remap to any keys you like
+# — e.g. move_left = "l", move_down = ";", move_up = "'", move_right = "\\".
+move_left  = "h"
+move_down  = "j"
+move_up    = "k"
+move_right = "l"
 
 [movement]
-step = 24                      # hjkl small step (px)
-large_step = 160               # with Shift
+step = 24                      # small step (px)
+large_step = 160               # step while Shift is held (works with any key)
 acceleration = 1.0             # >1.0 = hold-to-accelerate; 1.0 = off
 
 [hints]

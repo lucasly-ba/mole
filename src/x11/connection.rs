@@ -17,8 +17,14 @@ use crate::geometry::Rect;
 /// A decoded key event, abstracted away from raw keycodes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyInput {
-    /// A printable character (already case-folded by the shift level).
-    Char(char),
+    /// A printable character, plus whether Shift was held. The character is the
+    /// key's *unshifted* symbol, so a binding matches the same key with or
+    /// without Shift; `shift` is reported separately so it can be used as a
+    /// modifier (e.g. large-step movement) on any key, not just letters.
+    Char {
+        c: char,
+        shift: bool,
+    },
     Escape,
     Backspace,
     Enter,
@@ -69,19 +75,19 @@ impl Conn {
     }
 
     /// Decode a raw key press into a [`KeyInput`].
+    ///
+    /// The character is read at the *unshifted* level so a binding matches its
+    /// key regardless of Shift; `shifted` is carried through on
+    /// [`KeyInput::Char`] for callers that treat Shift as a modifier.
     pub fn decode_key(&self, keycode: u8, shifted: bool) -> KeyInput {
-        let level = usize::from(shifted);
-        let sym = match self.keysym(keycode, level) {
-            0 => self.keysym(keycode, 0),
-            s => s,
-        };
+        let sym = self.keysym(keycode, 0);
         match sym {
             0xff1b => KeyInput::Escape,
             0xff08 => KeyInput::Backspace,
             0xff0d | 0xff8d => KeyInput::Enter, // Return, KP_Enter
             // Latin-1 printable range maps straight to a char.
             0x20..=0x7e | 0xa0..=0xff => char::from_u32(sym)
-                .map(KeyInput::Char)
+                .map(|c| KeyInput::Char { c, shift: shifted })
                 .unwrap_or(KeyInput::Other),
             _ => KeyInput::Other,
         }
