@@ -74,6 +74,14 @@ pub trait Detector {
             pending: None,
         })
     }
+
+    /// Detect *phrase-level* targets (whole sentences/lines), used by drag
+    /// selection so a whole sentence can be selected even when hints are
+    /// per-word. Defaults to [`Detector::detect`]; the OCR backend overrides it to
+    /// always group words into phrases regardless of the configured granularity.
+    fn detect_phrases(&self, screen: &Screen) -> Result<Vec<Element>> {
+        self.detect(screen)
+    }
 }
 
 /// Build the detector described by `config`, sharing `cache` so OCR results

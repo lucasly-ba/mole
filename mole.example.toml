@@ -83,6 +83,11 @@ tiles = 4
 # been looking at then needs no OCR and appears instantly. Costs a little CPU
 # while the screen is changing; set false to OCR purely on demand.
 prewarm = true
+# Hint every individual word (true) so every word — including the ends of lines —
+# is reachable. Set false to hint whole phrases instead (fewer labels, but you
+# only land at the start of each phrase). Drag selection always works on phrases,
+# so a whole sentence stays selectable either way.
+hint_words = true
 
 [daemon]
 # Unix socket the daemon listens on. The CLI talks to it over this socket.

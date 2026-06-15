@@ -247,14 +247,19 @@ Detection is OCR, end to end, split into small single-purpose steps under
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.
-- **§3.3 Phrase grouping** → `ocr/phrase.rs`, the heart of the tool. Hinting every
-  single word would bury the screen in labels, so words are merged into phrases:
-  cluster into lines (vertical centres within `line_tolerance` of each other),
-  then split each line on wide horizontal gaps (`max_word_gap`, as a multiple of
-  text height) so columns and separate controls stay distinct. A phrase's box is
-  the union of its words' boxes; its text is the words rejoined. The whole thing
-  is geometric — no pixels re-read — so it's deterministic and exhaustively
-  unit-tested.
+- **§3.3 Word vs. phrase targets** → `ocr/phrase.rs` + `OcrDetector` granularity.
+  Tesseract gives one box per word. **By default every word is its own hint**
+  (`ocr.hint_words = true`), so every word — including the ends of lines — is
+  reachable; an earlier phrase-only default left the back half of each line with
+  no hint at all. Set `hint_words = false` to merge words into phrases instead
+  (fewer labels, but you only land at the start of each): cluster into lines
+  (vertical centres within `line_tolerance`), then split each line on wide
+  horizontal gaps (`max_word_gap`, a multiple of text height) so columns and
+  separate controls stay distinct; a phrase's box is the union of its words', its
+  text the words rejoined. **Drag always uses phrase granularity**
+  (`Detector::detect_phrases`) regardless of the setting, so a whole sentence
+  stays selectable. The grouping is geometric — no pixels re-read — so it's
+  deterministic and exhaustively unit-tested.
 - **§3.4 Hint generation** → `hint/label.rs`. The algorithm grows a breadth-first
   frontier so labels are **prefix-free** (the instant your keys equal a label, the
   choice is unambiguous — no Enter needed) and as short as possible. Live matching

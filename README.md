@@ -3,7 +3,7 @@
 [![CI](https://github.com/lucasly-ba/mole/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasly-ba/mole/actions/workflows/ci.yml)
 
 **Keyboard-only mouse navigation for Linux/X11.** Press a key and Mole labels
-every line of text on your screen with two letters. Type a label and the pointer
+every word on your screen with a short hint. Type a label and the pointer
 teleports there — then click, drag, or keep moving by keyboard.
 
 The name fits twice over: **mo**use-**le**ss, and a mole tunnels straight to
@@ -18,7 +18,8 @@ wherever you point.
 
 ## Features
 
-- **Hint every line of text** on screen and **teleport** the pointer to it.
+- **Hint every word** on screen and **teleport** the pointer to it (set
+  `ocr.hint_words = false` for fewer, phrase-level hints instead).
 - **Click** — left, right, or double.
 - **Drag & select** a whole sentence — each phrase gets a hint at its start and
   its end — copied straight to the clipboard.
