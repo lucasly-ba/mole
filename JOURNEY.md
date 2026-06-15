@@ -178,6 +178,16 @@ Detection is OCR, end to end, split into small single-purpose steps under
   while an interaction owns the screen, so it never captures mole's own overlay.
   `ocr.prewarm = false` turns the background thread off for a purely on-demand,
   zero-idle-cost mode.
+
+  Finally, even when something *did* change, a hint needn't wait for it.
+  `Detector::detect_split` returns the cached words for the unchanged part of the
+  screen **immediately**, plus a closure that re-OCRs the changed bands. The
+  session (`select_incremental`) shows the ready hints at once, runs the closure
+  on a worker thread, and folds the late hints in when they arrive — placed
+  around the existing ones, with labels drawn from a reserved pool so the labels
+  already on screen never shift (and a key already typed is replayed onto the
+  larger set). So a hint over a screen with one busy corner appears instantly for
+  everything else, and the corner's hints pop in a fraction of a second later.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.

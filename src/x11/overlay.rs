@@ -206,6 +206,32 @@ impl<'a> Overlay<'a> {
         }
     }
 
+    /// Non-blocking variant of [`Overlay::next_input`]: returns the next input if
+    /// one is already queued, or `None` immediately. Used by the incremental hint
+    /// loop, which also has to watch for late-arriving (background-OCR'd) hints.
+    pub fn poll_input(&self) -> Result<Option<OverlayInput>> {
+        loop {
+            match self.conn.conn.poll_for_event().map_err(Error::x11)? {
+                Some(Event::KeyPress(ev)) => {
+                    let shifted = u16::from(ev.state)
+                        & u16::from(x11rb::protocol::xproto::ModMask::SHIFT)
+                        != 0;
+                    return Ok(Some(OverlayInput::Key(
+                        self.conn.decode_key(ev.detail, shifted),
+                    )));
+                }
+                Some(Event::ButtonPress(ev)) => {
+                    return Ok(Some(OverlayInput::Click(Point::new(
+                        ev.root_x as i32,
+                        ev.root_y as i32,
+                    ))));
+                }
+                Some(_) => continue,
+                None => return Ok(None),
+            }
+        }
+    }
+
     /// Grab the keyboard, retrying briefly: the window may not be viewable the
     /// instant after `map_window`.
     fn grab_keyboard(&self) -> Result<()> {

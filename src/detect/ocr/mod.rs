@@ -32,7 +32,7 @@ use cache::Band;
 
 use crate::capture::Screen;
 use crate::config::Config;
-use crate::detect::{self, Detector, Element};
+use crate::detect::{self, Detector, Element, Scan, ScanRest};
 use crate::error::{Error, Result};
 use crate::geometry::Rect;
 
@@ -70,13 +70,10 @@ impl OcrDetector {
         }
     }
 
-    /// Capture-to-words, re-reading only the bands that changed since last scan.
-    /// Returns the (deduplicated) words across the whole screen.
-    ///
-    /// The cache lock is held across the whole scan, so the on-demand hint and
-    /// the background pre-warm never OCR at the same time (which would
-    /// oversubscribe the cores and make both slower). A hint that arrives during
-    /// a pre-warm waits for it, then finds the cache already fresh.
+    /// Capture-to-words in one shot, re-reading only the changed bands. The cache
+    /// lock is held across the whole scan, so the on-demand hint and the
+    /// background pre-warm never OCR at the same time (which would oversubscribe
+    /// the cores). Used by [`Detector::detect`] and the pre-warmer.
     fn scan(&self, screen: &Screen, region: Rect) -> Result<Vec<Word>> {
         let width = screen.width();
         let height = screen.height();
@@ -85,50 +82,26 @@ impl OcrDetector {
         let mut cache = self.cache.lock().unwrap();
         let bands = cache.plan(&rgb, width, height, self.tiles, TILE_OVERLAP);
         log::debug!("cache: re-reading {} band(s)", bands.len());
-        let fresh = self.ocr_bands(&rgb, width, region, &bands)?;
+        let fresh = ocr_bands(
+            &self.tesseract,
+            &rgb,
+            width,
+            region,
+            &bands,
+            self.min_confidence,
+        )?;
         for (band, words) in fresh {
             cache.splice(region.y, band, words);
         }
         Ok(dedup_words(cache.all_words()))
     }
 
-    /// OCR the given bands in parallel, capping each process's threads so they
-    /// don't oversubscribe the cores. Returns `(band, words)`.
-    fn ocr_bands(
-        &self,
-        rgb: &[u8],
-        width: i32,
-        region: Rect,
-        bands: &[Band],
-    ) -> Result<Vec<(Band, Vec<Word>)>> {
-        if bands.is_empty() {
-            return Ok(Vec::new());
-        }
-        let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-        let threads = (cores / bands.len()).max(1);
-        let min_conf = self.min_confidence;
-        let tess = &self.tesseract;
-
-        std::thread::scope(|scope| {
-            let handles: Vec<_> = bands
-                .iter()
-                .map(|&b| {
-                    scope.spawn(move || -> Result<(Band, Vec<Word>)> {
-                        let ppm = tesseract::encode_ppm_band(rgb, width, b.y0, b.h);
-                        let raw = tess.run(ppm, threads)?;
-                        let area = Rect::new(region.x, region.y + b.y0, width, b.h);
-                        Ok((b, tsv::parse(&raw, area, min_conf)))
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| {
-                    h.join()
-                        .map_err(|_| Error::Ocr("OCR worker panicked".into()))?
-                })
-                .collect()
-        })
+    fn elements(&self, words: Vec<Word>, region: Rect) -> Vec<Element> {
+        detect::finalize(
+            phrase::group(words, self.grouping),
+            self.min_element_size,
+            region,
+        )
     }
 }
 
@@ -140,9 +113,117 @@ impl Detector for OcrDetector {
     fn detect(&self, screen: &Screen) -> Result<Vec<Element>> {
         let region = screen.bounds();
         let words = self.scan(screen, region)?;
-        let phrases = phrase::group(words, self.grouping);
-        Ok(detect::finalize(phrases, self.min_element_size, region))
+        Ok(self.elements(words, region))
     }
+
+    /// Show the cached words for the unchanged part of the screen immediately,
+    /// and re-OCR only the changed bands in the background (the pending part),
+    /// yielding the words found there once done.
+    fn detect_split(&self, screen: &Screen) -> Result<Scan> {
+        let region = screen.bounds();
+        let width = screen.width();
+        let height = screen.height();
+        let rgb = std::sync::Arc::new(screen.to_rgb());
+
+        // Plan the changed bands and snapshot the current words under one lock.
+        let (bands, cached) = {
+            let mut cache = self.cache.lock().unwrap();
+            let bands = cache.plan(&rgb, width, height, self.tiles, TILE_OVERLAP);
+            (bands, cache.all_words())
+        };
+        let ranges: Vec<(i32, i32)> = bands
+            .iter()
+            .map(|b| (region.y + b.y0, region.y + b.y0 + b.h))
+            .collect();
+
+        // Phase 1: cached words that lie outside every changed band.
+        let outside: Vec<Word> = cached
+            .into_iter()
+            .filter(|w| !in_ranges(w.rect.center().y, &ranges))
+            .collect();
+        let ready = self.elements(dedup_words(outside), region);
+
+        if bands.is_empty() {
+            return Ok(Scan {
+                ready,
+                pending: None,
+            });
+        }
+
+        // Phase 2: OCR the changed bands off-thread, splice them into the cache,
+        // and return the words that now live inside those bands.
+        let cache = std::sync::Arc::clone(&self.cache);
+        let tess = self.tesseract.clone();
+        let min_conf = self.min_confidence;
+        let min_size = self.min_element_size;
+        let grouping = self.grouping;
+        let pending: ScanRest = Box::new(move || {
+            let fresh = ocr_bands(&tess, &rgb, width, region, &bands, min_conf)?;
+            let inside: Vec<Word> = {
+                let mut cache = cache.lock().unwrap();
+                for (band, words) in fresh {
+                    cache.splice(region.y, band, words);
+                }
+                cache
+                    .all_words()
+                    .into_iter()
+                    .filter(|w| in_ranges(w.rect.center().y, &ranges))
+                    .collect()
+            };
+            Ok(detect::finalize(
+                phrase::group(dedup_words(inside), grouping),
+                min_size,
+                region,
+            ))
+        });
+        Ok(Scan {
+            ready,
+            pending: Some(pending),
+        })
+    }
+}
+
+/// True when `y` falls in any of the (start, end) ranges.
+fn in_ranges(y: i32, ranges: &[(i32, i32)]) -> bool {
+    ranges.iter().any(|&(a, b)| y >= a && y < b)
+}
+
+/// OCR the given bands in parallel, capping each process's threads so they don't
+/// oversubscribe the cores. Returns `(band, words)`.
+fn ocr_bands(
+    tess: &Tesseract,
+    rgb: &[u8],
+    width: i32,
+    region: Rect,
+    bands: &[Band],
+    min_conf: f32,
+) -> Result<Vec<(Band, Vec<Word>)>> {
+    if bands.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = (cores / bands.len()).max(1);
+
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = bands
+            .iter()
+            .map(|&b| {
+                scope.spawn(move || -> Result<(Band, Vec<Word>)> {
+                    let ppm = tesseract::encode_ppm_band(rgb, width, b.y0, b.h);
+                    let raw = tess.run(ppm, threads)?;
+                    let area = Rect::new(region.x, region.y + b.y0, width, b.h);
+                    Ok((b, tsv::parse(&raw, area, min_conf)))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .map_err(|_| Error::Ocr("OCR worker panicked".into()))?
+            })
+            .collect()
+    })
 }
 
 /// Plan `tiles` horizontal strips covering `[0, height)`, each grown by `overlap`

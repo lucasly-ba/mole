@@ -230,6 +230,14 @@ OCR is the slow part of a hint. Three things make it fast:
   costs a little CPU while the screen is changing and stands down while a hint is
   on screen; set `prewarm = false` for purely on-demand scanning with no idle
   cost. Moving the mouse never triggers it (the cursor isn't part of the capture).
+- **Instant hints, even on change** — when you trigger a hint, the cached hints
+  for the unchanged part of the screen appear immediately while only the changed
+  regions are re-read in the background; their hints pop in a moment later,
+  without shifting the labels already on screen.
+
+None of this is tied to a particular display: the capture, the cell grid, and the
+tiles are all computed from your actual screen size, so the same behaviour applies
+on any resolution.
 
 ## How it works
 
