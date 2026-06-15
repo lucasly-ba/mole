@@ -131,6 +131,41 @@ impl Detector for OcrDetector {
             let bands = cache.plan(&rgb, width, height, self.tiles, TILE_OVERLAP);
             (bands, cache.all_words())
         };
+
+        if bands.is_empty() {
+            // Nothing changed — every cached word is current.
+            return Ok(Scan {
+                ready: self.elements(dedup_words(cached), region),
+                pending: None,
+            });
+        }
+
+        // When most of the screen changed (a fresh window, a workspace switch),
+        // there's little point showing a sliver of cached hints and dribbling the
+        // rest in — it just looks half-broken. Re-read it all up front and show
+        // the complete set at once.
+        if band_coverage(&bands) * 2 > height {
+            let all = {
+                let fresh = ocr_bands(
+                    &self.tesseract,
+                    &rgb,
+                    width,
+                    region,
+                    &bands,
+                    self.min_confidence,
+                )?;
+                let mut cache = self.cache.lock().unwrap();
+                for (band, words) in fresh {
+                    cache.splice(region.y, band, words);
+                }
+                cache.all_words()
+            };
+            return Ok(Scan {
+                ready: self.elements(dedup_words(all), region),
+                pending: None,
+            });
+        }
+
         let ranges: Vec<(i32, i32)> = bands
             .iter()
             .map(|b| (region.y + b.y0, region.y + b.y0 + b.h))
@@ -142,13 +177,6 @@ impl Detector for OcrDetector {
             .filter(|w| !in_ranges(w.rect.center().y, &ranges))
             .collect();
         let ready = self.elements(dedup_words(outside), region);
-
-        if bands.is_empty() {
-            return Ok(Scan {
-                ready,
-                pending: None,
-            });
-        }
 
         // Phase 2: OCR the changed bands off-thread, splice them into the cache,
         // and return the words that now live inside those bands.
@@ -186,6 +214,22 @@ impl Detector for OcrDetector {
 /// True when `y` falls in any of the (start, end) ranges.
 fn in_ranges(y: i32, ranges: &[(i32, i32)]) -> bool {
     ranges.iter().any(|&(a, b)| y >= a && y < b)
+}
+
+/// Total screen height (px) covered by the bands, counting overlap once.
+fn band_coverage(bands: &[Band]) -> i32 {
+    let mut spans: Vec<(i32, i32)> = bands.iter().map(|b| (b.y0, b.y0 + b.h)).collect();
+    spans.sort_unstable();
+    let mut covered = 0;
+    let mut reached = i32::MIN;
+    for (start, end) in spans {
+        let start = start.max(reached);
+        if end > start {
+            covered += end - start;
+        }
+        reached = reached.max(end);
+    }
+    covered
 }
 
 /// OCR the given bands in parallel, capping each process's threads so they don't
@@ -300,6 +344,20 @@ mod tests {
         assert!(
             bands[0].1 > 1000 / 4,
             "first strip should be grown by overlap"
+        );
+    }
+
+    #[test]
+    fn band_coverage_merges_overlaps() {
+        // Disjoint bands sum.
+        assert_eq!(
+            band_coverage(&[Band { y0: 0, h: 100 }, Band { y0: 300, h: 50 }]),
+            150
+        );
+        // Overlapping bands count the union once.
+        assert_eq!(
+            band_coverage(&[Band { y0: 0, h: 100 }, Band { y0: 80, h: 100 }]),
+            180
         );
     }
 

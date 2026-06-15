@@ -188,6 +188,11 @@ Detection is OCR, end to end, split into small single-purpose steps under
   already on screen never shift (and a key already typed is replayed onto the
   larger set). So a hint over a screen with one busy corner appears instantly for
   everything else, and the corner's hints pop in a fraction of a second later.
+  This split only applies to *localised* change: when the changed bands cover
+  more than half the screen (a fresh window, a workspace switch) there's no
+  meaningful cached part to show, and a half-filled overlay just looks broken —
+  so `detect_split` re-reads the whole thing up front and shows the complete set
+  at once instead of dribbling it in.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.
