@@ -29,14 +29,18 @@ wherever you point.
 ## Installation
 
 Mole is a Cargo project. It needs two system packages — **cairo** (to build) and
-**tesseract** (at runtime) — both in every major distro's repositories. Then:
+**tesseract** (at runtime) — both in every major distro's repositories. Then
+build and put `mole` on your `PATH`:
+
+```sh
+cargo install --path .       # builds release + installs to ~/.cargo/bin
+```
+
+Or build it without installing and place the binary yourself:
 
 ```sh
 cargo build --release        # binary at target/release/mole
 ```
-
-Put it on your `PATH` with `cargo install --path .` (installs to `~/.cargo/bin`),
-or copy `target/release/mole` anywhere on your `PATH`.
 
 <details>
 <summary>Nix</summary>
