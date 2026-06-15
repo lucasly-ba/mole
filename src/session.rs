@@ -509,7 +509,10 @@ impl<'a> Session<'a> {
             "space" => "Space".to_string(),
             other => other.to_string(),
         };
-        let moves = format!("{}{}{}{}", k.move_left, k.move_down, k.move_up, k.move_right);
+        let moves = format!(
+            "{}{}{}{}",
+            k.move_left, k.move_down, k.move_up, k.move_right
+        );
         let text = format!(
             "MOVE   {moves} or arrows: move  ·  {}: faster  ·  {}: click  {}: right  {}: double  {}: drag  ·  Esc: exit",
             show_key(&k.speed_boost),
@@ -557,5 +560,18 @@ fn key_char(s: &str) -> char {
     match s {
         "space" => ' ',
         _ => s.chars().next().unwrap_or('\0'),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_char;
+
+    #[test]
+    fn key_char_reads_a_letter_a_name_and_an_empty_string() {
+        assert_eq!(key_char("h"), 'h');
+        assert_eq!(key_char("space"), ' '); // the one named key
+        assert_eq!(key_char(""), '\0'); // empty -> sentinel, matches nothing
+        assert_eq!(key_char(";"), ';'); // punctuation is fine
     }
 }
