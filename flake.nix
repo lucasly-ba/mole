@@ -14,7 +14,8 @@
         pkgs = import nixpkgs { inherit system; };
 
         # Build-time native dependencies (pkg-config-discovered C libraries).
-        nativeBuildInputs = [ pkgs.pkg-config ];
+        # makeWrapper lets us put the runtime tools on the installed binary's PATH.
+        nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper ];
 
         # Link-time native dependencies. cairo is the only hard one; the X11
         # stack used at runtime is reached through x11rb's pure-Rust backend.
@@ -47,6 +48,14 @@
             "--skip=x11::"
             "--skip=overlay"
           ];
+
+          # mole shells out to `tesseract` at runtime; put it on the installed
+          # binary's PATH so `nix profile install` is self-contained (otherwise
+          # the daemon fails with "failed to spawn tesseract" outside a dev shell).
+          postFixup = ''
+            wrapProgram $out/bin/mole \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.tesseract ]}
+          '';
 
           meta = with pkgs.lib; {
             description = "Keyboard-only mouse navigation for Linux/X11";
