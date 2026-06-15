@@ -106,7 +106,6 @@ move_right = "l"
 step = 24                      # small step (px)
 large_step = 160               # step while Shift is held (works with any key)
 acceleration = 1.0             # >1.0 = hold-to-accelerate; 1.0 = off
-teleport_then_move = true      # after teleport, nudge with the keyboard (false = jump only)
 
 [hints]
 background = [255, 220, 90, 230]   # label colour, RGBA
