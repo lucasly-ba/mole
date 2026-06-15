@@ -6,6 +6,52 @@ welcome — bug fixes, new backends, docs, anything.
 Read [JOURNEY.md](JOURNEY.md) first: it explains how the pipeline is shaped and
 *why*, which makes most changes obvious where they belong.
 
+## Getting the source
+
+Clone the repository.
+
+**Via SSH (recommended)** if you plan to contribute regularly — needs your
+[SSH keys on GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh):
+
+```sh
+git clone git@github.com:lucasly-ba/mole.git
+cd mole
+```
+
+**Via HTTPS** for a read-only checkout, or if you haven't set up SSH:
+
+```sh
+git clone https://github.com/lucasly-ba/mole.git
+cd mole
+```
+
+## Setting up your fork
+
+To submit changes you push to your own fork and open a pull request from it.
+
+Fork `lucasly-ba/mole` with the **Fork** button (top-right of the GitHub page) —
+this creates `<username>/mole`. Add it as a remote:
+
+```sh
+# Using 'my-remote' as a placeholder name.
+
+# If you cloned over SSH:
+git remote add my-remote git@github.com:<username>/mole.git
+
+# If you cloned over HTTPS:
+git remote add my-remote https://github.com/<username>/mole.git
+```
+
+Then create a branch and push it to your fork:
+
+```sh
+# Using 'my-branch' as a placeholder name.
+git checkout -b my-branch
+git push --set-upstream my-remote my-branch
+```
+
+From there, open a pull request against `lucasly-ba/mole`'s `main` branch.
+
 ## Building and testing
 
 Mole is a normal Cargo project. You need the **cairo** library to build and the
