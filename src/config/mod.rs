@@ -58,24 +58,40 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct Keys {
     pub hint_alphabet: String,
+    // --- Free-move (`mole move`) directional keys ---
     pub move_left: String,
     pub move_down: String,
     pub move_up: String,
     pub move_right: String,
+    // --- Free-move action keys (tap to act at the pointer) ---
+    /// Hold to glide faster (a name like `"space"` is accepted).
+    pub speed_boost: String,
+    /// Left-click where the pointer is.
+    pub left_click: String,
+    /// Right-click where the pointer is.
+    pub right_click: String,
+    /// Double-click where the pointer is.
+    pub double_click: String,
+    /// Toggle a left-button drag: tap once to press, glide, tap again to
+    /// release — the selection is copied to the clipboard.
+    pub drag: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Movement {
-    /// Pixels per tap (the base "sensitivity").
-    pub step: i32,
-    /// Pixels per tap while holding Shift.
-    pub large_step: i32,
-    /// Step multiplier applied per consecutive press in the same direction;
-    /// `1.0` disables acceleration.
+    /// Glide speed (px/second) the instant a direction is pressed — the base
+    /// sensitivity for fine positioning.
+    pub speed: f64,
+    /// Hard ceiling (px/second) the glide accelerates to while a direction is
+    /// held.
+    pub max_speed: f64,
+    /// Speed multiplier applied per second a direction stays held, so the
+    /// pointer glides faster the longer you hold it. `1.0` disables acceleration.
     pub acceleration: f64,
-    /// Hard ceiling (px) on a single accelerated step.
-    pub max_step: i32,
+    /// Speed multiplier while the `speed_boost` key is held — for crossing the
+    /// screen quickly. `1.0` disables the boost.
+    pub boost: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -140,10 +156,16 @@ impl Default for Keys {
     fn default() -> Self {
         Keys {
             hint_alphabet: "asdfghjkl".to_string(),
+            // Right hand on hjkl steers; the left hand rests on the action keys.
             move_left: "h".to_string(),
             move_down: "j".to_string(),
             move_up: "k".to_string(),
             move_right: "l".to_string(),
+            speed_boost: "space".to_string(),
+            left_click: "f".to_string(),
+            right_click: "d".to_string(),
+            double_click: "s".to_string(),
+            drag: "a".to_string(),
         }
     }
 }
@@ -151,10 +173,10 @@ impl Default for Keys {
 impl Default for Movement {
     fn default() -> Self {
         Movement {
-            step: 24,
-            large_step: 160,
-            acceleration: 1.0,
-            max_step: 600,
+            speed: 1200.0,
+            max_speed: 5000.0,
+            acceleration: 4.0,
+            boost: 2.5,
         }
     }
 }
@@ -242,13 +264,18 @@ impl Config {
                 )));
             }
         }
-        if self.movement.step <= 0 || self.movement.large_step <= 0 || self.movement.max_step <= 0 {
-            return Err(Error::Config("movement steps must be positive".into()));
+        if self.movement.speed <= 0.0 || self.movement.max_speed <= 0.0 {
+            return Err(Error::Config(
+                "movement.speed and movement.max_speed must be positive".into(),
+            ));
         }
         if self.movement.acceleration < 1.0 {
             return Err(Error::Config(
                 "movement.acceleration must be at least 1.0".into(),
             ));
+        }
+        if self.movement.boost < 1.0 {
+            return Err(Error::Config("movement.boost must be at least 1.0".into()));
         }
         if self.hints.font_size <= 0.0 {
             return Err(Error::Config("hints.font_size must be positive".into()));
@@ -299,14 +326,14 @@ mod tests {
         let text = include_str!("../../mole.example.toml");
         let cfg = Config::from_toml(text).expect("example config should parse");
         assert_eq!(cfg.keys.hint_alphabet, "asdfghjkl");
-        assert_eq!(cfg.movement.large_step, 160);
+        assert_eq!(cfg.movement.max_speed, 5000.0);
         assert_eq!(cfg.ocr.language, "eng");
     }
 
     #[test]
     fn partial_config_keeps_defaults() {
-        let cfg = Config::from_toml("[movement]\nstep = 5\n").unwrap();
-        assert_eq!(cfg.movement.step, 5);
+        let cfg = Config::from_toml("[movement]\nspeed = 500.0\n").unwrap();
+        assert_eq!(cfg.movement.speed, 500.0);
         // Untouched sections fall back to defaults.
         assert_eq!(cfg.keys.hint_alphabet, Keys::default().hint_alphabet);
     }

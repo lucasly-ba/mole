@@ -22,8 +22,9 @@ wherever you point.
 - **Click** — left, right, or double.
 - **Drag & select** a whole sentence — each phrase gets a hint at its start and
   its end — copied straight to the clipboard.
-- **Move** — `hjkl` pointer nudging, with a big step and optional
-  hold-to-accelerate.
+- **Move** — glide the pointer with `hjkl` like a real mouse: it accelerates
+  while you hold a direction, a boost key crosses the screen fast, and you can
+  click, double-click, right-click, or drag-and-copy without leaving move mode.
 
 ## Installation
 
@@ -70,8 +71,12 @@ mole dump-config       # print the default config
 ```
 
 While hints are showing: type a label to pick it, **Backspace** to correct,
-**Esc** to cancel. In `move` mode, `hjkl` nudges the pointer (Shift for big
-steps), **Esc**/**Enter** exits.
+**Esc** to cancel.
+
+In `move` mode the pointer glides over the live desktop: `hjkl` steers (hold to
+accelerate), **Space** boosts the speed, **f**/**d**/**s** left-/right-/double-
+click, and **a** toggles a drag — tap to start, glide, tap again to drop and
+copy the selection. **Esc** exits. Every key is remappable in `[keys]`.
 
 ### Autostart
 
@@ -96,17 +101,23 @@ the annotated default, or copy [`mole.example.toml`](mole.example.toml).
 [keys]
 hint_alphabet = "asdfghjkl"   # keys used to build hint labels
 
-# Movement keys for `mole move`. Defaults are hjkl; remap to any keys you like
-# — e.g. move_left = "l", move_down = ";", move_up = "'", move_right = "\\".
+# Free-move keys for `mole move`. Steer with hjkl by default; the action keys
+# act at the pointer. All remappable; "space" is accepted as a key name.
 move_left  = "h"
 move_down  = "j"
 move_up    = "k"
 move_right = "l"
+speed_boost  = "space"         # hold to glide faster
+left_click   = "f"
+right_click  = "d"
+double_click = "s"
+drag         = "a"             # tap to start a drag, tap again to drop + copy
 
 [movement]
-step = 24                      # small step (px)
-large_step = 160               # step while Shift is held (works with any key)
-acceleration = 1.0             # >1.0 = hold-to-accelerate; 1.0 = off
+speed = 1200.0                 # glide speed when a key is first pressed (px/s)
+max_speed = 5000.0             # ceiling while holding (px/s)
+acceleration = 4.0             # speed × this per second held; 1.0 = off
+boost = 2.5                    # speed × this while speed_boost is held
 
 [hints]
 background = [255, 220, 90, 230]   # label colour, RGBA
