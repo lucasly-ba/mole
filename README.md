@@ -20,7 +20,8 @@ wherever you point.
 
 - **Hint every line of text** on screen and **teleport** the pointer to it.
 - **Click** — left, right, or double.
-- **Drag & select** between two hints, copied to the clipboard.
+- **Drag & select** a whole sentence — each phrase gets a hint at its start and
+  its end — copied straight to the clipboard.
 - **Move** — `hjkl` pointer nudging, with a big step and optional
   hold-to-accelerate.
 

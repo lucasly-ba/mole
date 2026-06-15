@@ -7,4 +7,4 @@ pub mod label;
 pub mod layout;
 
 pub use label::{generate_labels, HintMatcher, MatchState};
-pub use layout::{place_hints, place_hints_avoiding, HintBox};
+pub use layout::{place_drag_hints, place_hints, place_hints_avoiding, HintBox};

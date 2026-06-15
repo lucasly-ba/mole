@@ -7,6 +7,11 @@
 //! vertically centred), not the phrase centre: a phrase target spans a whole
 //! line, and its midpoint can land in a gap between words or past the clickable
 //! part — the first glyphs are where you actually want to click.
+//!
+//! Drag selection ([`place_drag_hints`]) is different: each phrase gets *two*
+//! hints, one on the first glyph and one just past the last, so you can pick the
+//! start of one phrase and the end of another and drag-select everything between
+//! — a whole sentence, copied to the clipboard (Plan §4.2).
 
 use crate::detect::Element;
 use crate::geometry::{Point, Rect};
@@ -29,6 +34,22 @@ pub struct HintBox {
 fn text_start(rect: Rect) -> Point {
     let inset = (rect.height / 2).min(rect.width / 2);
     Point::new(rect.x + inset, rect.y + rect.height / 2)
+}
+
+/// Where a drag selection should *begin* for a phrase: hard on the left edge,
+/// vertically centred. Unlike [`text_start`] there is no inset — a press inset
+/// into the text starts the selection mid-word (or, on a short box, past the
+/// first character), so the drag grabs nothing or too little. The very left edge
+/// is the first glyph, which is exactly where a text selection should start.
+fn drag_start(rect: Rect) -> Point {
+    Point::new(rect.x, rect.y + rect.height / 2)
+}
+
+/// Where a drag selection should *end* for a phrase: just past the right edge,
+/// vertically centred, so the release sits after the last glyph and the whole
+/// phrase is selected (clamped one pixel inside the box so it stays on the text).
+fn drag_end(rect: Rect) -> Point {
+    Point::new(rect.right() - 1, rect.y + rect.height / 2)
 }
 
 /// Estimate the pixel size of a label box for a monospace-ish font.
@@ -57,6 +78,13 @@ const OFFSETS: &[(i32, i32)] = &[
     (-1, 1),
 ];
 
+/// A request to place one label: where its box prefers to sit (`anchor`, its
+/// top-left) and where the pointer should land when it's chosen (`target`).
+struct Anchor {
+    anchor: Point,
+    target: Point,
+}
+
 /// Place a hint box for every (element, label) pair, avoiding overlaps where it
 /// can. `min_gap` is the minimum spacing enforced between boxes.
 pub fn place_hints(
@@ -82,13 +110,70 @@ pub fn place_hints_avoiding(
     existing: &[HintBox],
 ) -> Vec<HintBox> {
     assert_eq!(elements.len(), labels.len(), "one label per element");
+    let anchors: Vec<Anchor> = elements
+        .iter()
+        .map(|el| Anchor {
+            anchor: Point::new(el.rect.x, el.rect.y),
+            target: text_start(el.rect),
+        })
+        .collect();
+    place_anchors(&anchors, labels, font_size, min_gap, screen, existing)
+}
+
+/// Place drag-selection hints: two per phrase, one on its first glyph and one
+/// just past its last. Picking the start of one phrase and the end of another
+/// then drag-selects the whole span between them. `labels` must hold one label
+/// per hint, i.e. `2 * elements.len()`, in the order start₀, end₀, start₁, …
+pub fn place_drag_hints(
+    elements: &[Element],
+    labels: &[String],
+    font_size: f64,
+    min_gap: i32,
+    screen: Rect,
+) -> Vec<HintBox> {
+    assert_eq!(
+        labels.len(),
+        elements.len() * 2,
+        "two labels per element (start + end)"
+    );
+    let anchors: Vec<Anchor> = elements
+        .iter()
+        .flat_map(|el| {
+            [
+                // Start hint hugs the left edge; end hint sits at the right edge.
+                Anchor {
+                    anchor: Point::new(el.rect.x, el.rect.y),
+                    target: drag_start(el.rect),
+                },
+                Anchor {
+                    anchor: Point::new(el.rect.right(), el.rect.y),
+                    target: drag_end(el.rect),
+                },
+            ]
+        })
+        .collect();
+    place_anchors(&anchors, labels, font_size, min_gap, screen, &[])
+}
+
+/// Lay out one label box per [`Anchor`], nudging around `existing` boxes and the
+/// ones placed so far to avoid overlaps. Returns only the newly placed boxes;
+/// their `index` continues after `existing`.
+fn place_anchors(
+    anchors: &[Anchor],
+    labels: &[String],
+    font_size: f64,
+    min_gap: i32,
+    screen: Rect,
+    existing: &[HintBox],
+) -> Vec<HintBox> {
+    assert_eq!(anchors.len(), labels.len(), "one label per anchor");
 
     let base_index = existing.len();
     let mut placed: Vec<HintBox> = existing.to_vec();
 
-    for (i, (el, label)) in elements.iter().zip(labels).enumerate() {
+    for (i, (a, label)) in anchors.iter().zip(labels).enumerate() {
         let (w, h) = box_size(label, font_size);
-        let base = Point::new(el.rect.x, el.rect.y);
+        let base = a.anchor;
 
         let mut chosen: Option<Rect> = None;
         for &(dx, dy) in OFFSETS {
@@ -124,7 +209,7 @@ pub fn place_hints_avoiding(
             index: base_index + i,
             label: label.clone(),
             rect,
-            target: text_start(el.rect),
+            target: a.target,
         });
     }
 
@@ -176,6 +261,27 @@ mod tests {
             no_overlaps(&boxes, 4),
             "boxes should not overlap after layout"
         );
+    }
+
+    #[test]
+    fn drag_hints_sit_at_both_ends_of_each_phrase() {
+        let els = [elem(100, 100, 400, 20)];
+        let labels = vec!["aa".to_string(), "ab".to_string()];
+        let boxes = place_drag_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 1920, 1080));
+        assert_eq!(boxes.len(), 2, "one start hint and one end hint");
+        // Start sits hard on the left edge (the first glyph), with no inset, so a
+        // selection begins at the sentence start — not mid-word.
+        assert_eq!(boxes[0].target, Point::new(100, 110));
+        // End sits at the right edge so the release is past the last glyph.
+        assert_eq!(boxes[1].target, Point::new(499, 110));
+    }
+
+    #[test]
+    #[should_panic(expected = "two labels per element")]
+    fn drag_hints_require_two_labels_per_phrase() {
+        let els = [elem(0, 0, 40, 16)];
+        let labels = vec!["aa".to_string()]; // only one — should be two
+        place_drag_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 800, 600));
     }
 
     #[test]

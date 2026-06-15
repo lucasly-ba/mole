@@ -263,7 +263,13 @@ land top-left.
   gives double-click / N-click.
 - **§4.2 Drag & select** → `session.rs` `Mode::Drag`: pick a start hint, pick an
   end hint, `MouseDown → move → MouseUp`, then mirror the resulting PRIMARY
-  selection into the CLIPBOARD via `arboard` (`interaction/mod.rs`).
+  selection into the CLIPBOARD via `arboard` (`interaction/mod.rs`). To make a
+  *sentence* selectable, drag mode lays **two** hints per phrase
+  (`place_drag_hints`): one on the first glyph (`drag_start`, no inset) and one
+  just past the last (`drag_end`). The earlier single-hint-per-phrase drag reused
+  the teleport target, which insets into the text — so the press began mid-word
+  and the drag grabbed too little or nothing. The start/end pair lets you select
+  one whole phrase (its start + its end hint) or span several lines.
 
 A subtlety that bit the first draft: the overlay must be **torn down before** the
 synthetic click, or the click lands on our own window. `run_hint` now collects

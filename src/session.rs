@@ -22,7 +22,8 @@ use crate::detect::{self, Detector, Element, Scan, ScanCache};
 use crate::error::Result;
 use crate::geometry::Point;
 use crate::hint::{
-    generate_labels, place_hints, place_hints_avoiding, HintBox, HintMatcher, MatchState,
+    generate_labels, place_drag_hints, place_hints, place_hints_avoiding, HintBox, HintMatcher,
+    MatchState,
 };
 use crate::interaction;
 use crate::motion::{Accelerator, Dir};
@@ -153,8 +154,10 @@ impl<'a> Session<'a> {
             log::info!("no hintable elements found");
             return Ok(Vec::new());
         }
-        let labels = generate_labels(&self.config.hint_alphabet(), elements.len());
-        let boxes = place_hints(
+        // Two hints per phrase (start + end), so a whole sentence can be selected
+        // by picking its start hint and its end hint.
+        let labels = generate_labels(&self.config.hint_alphabet(), elements.len() * 2);
+        let boxes = place_drag_hints(
             &elements,
             &labels,
             self.config.hints.font_size,
