@@ -36,20 +36,27 @@ fn text_start(rect: Rect) -> Point {
     Point::new(rect.x + inset, rect.y + rect.height / 2)
 }
 
-/// Where a drag selection should *begin* for a phrase: hard on the left edge,
-/// vertically centred. Unlike [`text_start`] there is no inset — a press inset
-/// into the text starts the selection mid-word (or, on a short box, past the
-/// first character), so the drag grabs nothing or too little. The very left edge
-/// is the first glyph, which is exactly where a text selection should start.
-fn drag_start(rect: Rect) -> Point {
-    Point::new(rect.x, rect.y + rect.height / 2)
+/// Horizontal margin (px) by which a drag press/release overshoots the text box,
+/// scaled to the line height (≈ half a character) and clamped. The OCR box hugs
+/// the ink, so a press *on* the left edge lands inside the first glyph and the
+/// selection starts at the second character; nudging out by this margin puts the
+/// press in the gap just before the first glyph (and the release just past the
+/// last), so the whole phrase — first letter included — is selected.
+fn drag_margin(rect: Rect) -> i32 {
+    (rect.height / 2).clamp(3, 14)
 }
 
-/// Where a drag selection should *end* for a phrase: just past the right edge,
-/// vertically centred, so the release sits after the last glyph and the whole
-/// phrase is selected (clamped one pixel inside the box so it stays on the text).
+/// Where a drag selection should *begin* for a phrase: just left of the first
+/// glyph, vertically centred (see [`drag_margin`]).
+fn drag_start(rect: Rect) -> Point {
+    Point::new(rect.x - drag_margin(rect), rect.y + rect.height / 2)
+}
+
+/// Where a drag selection should *end* for a phrase: just past the last glyph,
+/// vertically centred, so the release sits after the final character and the
+/// whole phrase is selected.
 fn drag_end(rect: Rect) -> Point {
-    Point::new(rect.right() - 1, rect.y + rect.height / 2)
+    Point::new(rect.right() + drag_margin(rect), rect.y + rect.height / 2)
 }
 
 /// Estimate the pixel size of a label box for a monospace-ish font.
@@ -269,11 +276,11 @@ mod tests {
         let labels = vec!["aa".to_string(), "ab".to_string()];
         let boxes = place_drag_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 1920, 1080));
         assert_eq!(boxes.len(), 2, "one start hint and one end hint");
-        // Start sits hard on the left edge (the first glyph), with no inset, so a
-        // selection begins at the sentence start — not mid-word.
-        assert_eq!(boxes[0].target, Point::new(100, 110));
-        // End sits at the right edge so the release is past the last glyph.
-        assert_eq!(boxes[1].target, Point::new(499, 110));
+        // Start sits just LEFT of the first glyph (margin = height/2 = 10), so the
+        // selection begins before the first character, not inside it.
+        assert_eq!(boxes[0].target, Point::new(90, 110));
+        // End sits just past the right edge so the release is after the last glyph.
+        assert_eq!(boxes[1].target, Point::new(510, 110));
     }
 
     #[test]
