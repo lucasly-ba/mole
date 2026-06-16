@@ -29,6 +29,7 @@ x11rb = { version = "0.13", features = [
     "xfixes",
     "render",
     "damage",
+    "randr",
     "allow-unsafe-code",
 ] }
 

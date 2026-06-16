@@ -107,6 +107,46 @@ impl Conn {
         Rect::new(0, 0, self.root_width as i32, self.root_height as i32)
     }
 
+    /// The rectangles of the physically connected monitors, in root coordinates.
+    ///
+    /// On a multi-head setup the root window is the *bounding box* of all
+    /// monitors, which can include regions no monitor actually covers — e.g. the
+    /// area below a shorter monitor sitting beside a taller one. The server
+    /// returns undefined pixels there, and OCR must not be fed them (a band that
+    /// spans such a region recognises nothing). This reports the real per-monitor
+    /// rectangles so OCR can stay inside them.
+    ///
+    /// Falls back to the whole root if RandR is unavailable or reports nothing, so
+    /// a single-head (or RandR-less) display behaves exactly as before.
+    pub fn monitors(&self) -> Vec<Rect> {
+        let rects = self.query_monitors().unwrap_or_default();
+        if rects.is_empty() {
+            vec![self.root_bounds()]
+        } else {
+            rects
+        }
+    }
+
+    /// Query RandR for the active monitor rectangles, clamped to the root. Returns
+    /// an error (swallowed by [`Conn::monitors`]) if the extension is missing.
+    fn query_monitors(&self) -> Result<Vec<Rect>> {
+        use x11rb::protocol::randr::ConnectionExt as _;
+        let reply = self
+            .conn
+            .randr_get_monitors(self.root, true)
+            .map_err(Error::x11)?
+            .reply()
+            .map_err(Error::x11)?;
+        let root = self.root_bounds();
+        Ok(reply
+            .monitors
+            .iter()
+            .filter_map(|m| {
+                Rect::new(m.x as i32, m.y as i32, m.width as i32, m.height as i32).clamp_to(root)
+            })
+            .collect())
+    }
+
     /// Look up the keycode that currently produces `keysym`, if any.
     pub fn keycode(&self, keysym: u32) -> Option<u8> {
         self.keymap.get(&keysym).copied()

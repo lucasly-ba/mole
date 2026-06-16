@@ -98,16 +98,64 @@ impl Tesseract {
     }
 }
 
-/// Encode rows `[y0, y0 + height)` of a tight, full-width RGB buffer as a PPM —
-/// one horizontal strip of the screen for tiled OCR. `rgb` is the whole-screen
-/// buffer from [`Screen::to_rgb`], reused across strips so it is built only once.
-pub fn encode_ppm_band(rgb: &[u8], width: i32, y0: i32, height: i32) -> Vec<u8> {
-    let w = width.max(0) as usize;
-    let start = (y0.max(0) as usize * w * 3).min(rgb.len());
-    let end = ((y0 + height).max(0) as usize * w * 3).min(rgb.len());
-    let body = &rgb[start..end];
-    let mut out = Vec::with_capacity(16 + body.len());
-    out.extend_from_slice(format!("P6\n{width} {height}\n255\n").as_bytes());
-    out.extend_from_slice(body);
+/// Encode the rectangle `[x0, x0 + w) × [y0, y0 + h)` of a tight RGB buffer as a
+/// PPM — one band of the screen for tiled OCR. `stride_w` is the full buffer width
+/// in pixels; the band is usually narrower (it stays within one monitor), so this
+/// copies the cropped columns row by row. `rgb` is the whole-screen buffer from
+/// [`Screen::to_rgb`], reused across bands so it is built only once. Rows that
+/// fall outside the buffer are zero-padded so the emitted image always matches the
+/// declared `w × h` (a malformed PPM would make Tesseract reject the whole band).
+pub fn encode_ppm_band(rgb: &[u8], stride_w: i32, x0: i32, y0: i32, w: i32, h: i32) -> Vec<u8> {
+    let stride = stride_w.max(0) as usize * 3;
+    let row_bytes = w.max(0) as usize * 3;
+    let xoff = x0.max(0) as usize * 3;
+    let mut out = Vec::with_capacity(16 + row_bytes * h.max(0) as usize);
+    out.extend_from_slice(format!("P6\n{w} {h}\n255\n").as_bytes());
+    for y in 0..h.max(0) {
+        let base = ((y0 + y).max(0) as usize * stride + xoff).min(rgb.len());
+        let avail = rgb.len().saturating_sub(base).min(row_bytes);
+        out.extend_from_slice(&rgb[base..base + avail]);
+        out.resize(out.len() + (row_bytes - avail), 0);
+    }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pixel `i`'s RGB, distinct per pixel: `(3i, 3i+1, 3i+2)`.
+    fn px(i: u8) -> [u8; 3] {
+        [i * 3, i * 3 + 1, i * 3 + 2]
+    }
+
+    #[test]
+    fn encode_crops_a_subrectangle_of_the_buffer() {
+        // A 4×2 image, pixels 0..8 left-to-right, top-to-bottom.
+        let rgb: Vec<u8> = (0..8u8).flat_map(px).collect();
+        // Crop columns [1, 3) over both rows -> a 2×2 band.
+        let ppm = encode_ppm_band(&rgb, 4, 1, 0, 2, 2);
+        let header = b"P6\n2 2\n255\n";
+        assert!(ppm.starts_with(header), "PPM header declares the band size");
+        let body = &ppm[header.len()..];
+        // Row 0: pixels 1,2 ; row 1: pixels 5,6 — the cropped columns only.
+        let expect: Vec<u8> = [1u8, 2, 5, 6].iter().flat_map(|&i| px(i)).collect();
+        assert_eq!(body, &expect[..]);
+    }
+
+    #[test]
+    fn encode_zero_pads_rows_that_fall_off_the_buffer() {
+        // Ask for a band taller than the 4×2 buffer: the missing third row must be
+        // padded so the emitted image still matches the declared 4×3 size.
+        let rgb: Vec<u8> = (0..8u8).flat_map(px).collect();
+        let ppm = encode_ppm_band(&rgb, 4, 0, 0, 4, 3);
+        let header = b"P6\n4 3\n255\n";
+        let body = &ppm[header.len()..];
+        assert_eq!(body.len(), 4 * 3 * 3, "exactly width*height*3 bytes");
+        assert_eq!(&body[..24], &rgb[..24], "real rows copied verbatim");
+        assert!(
+            body[24..].iter().all(|&b| b == 0),
+            "missing row zero-padded"
+        );
+    }
 }
