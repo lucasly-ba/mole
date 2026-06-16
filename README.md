@@ -9,9 +9,9 @@ teleports there — then click, drag, or keep moving by keyboard.
 The name fits twice over: **mo**use-**le**ss, and a mole tunnels straight to
 wherever you point.
 
-<video src="https://github.com/lucasly-ba/mole/raw/main/docs/demo.mp4" controls muted playsinline width="100%">
-  <img src="docs/demo.gif" alt="Mole in action" />
-</video>
+![Mole in action](docs/demo.gif)
+
+▶ [Watch the full-quality video](docs/demo.mp4)
 
 > Status: works on X11. Wayland is a planned next step (see
 > [Limitations](#limitations)).
