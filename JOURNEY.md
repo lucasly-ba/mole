@@ -257,6 +257,28 @@ Detection is OCR, end to end, split into small single-purpose steps under
   behind a lock that the aborter can reach, while its output is read off that lock,
   so the killer is never itself blocked. The on-demand path carries its own
   `Cancel` that is never aborted; only the background warm is preemptible.
+
+  **Multiple monitors, honestly.** A bug from a real dual-head desk: hints
+  appeared everywhere *except* a strip along the bottom of one monitor. The two
+  screens have different heights (2560×1440 beside 1920×1080), so the X root
+  window is the *bounding box* of both — 4480×1440 — and the bottom-right
+  1920×360 of that box is a **void** no physical display covers. `GetImage`
+  returns undefined, ever-changing pixels there. The catch isn't that the void
+  has no text; it's that a full-root-width OCR band *spanning* the void is
+  destroyed by it: Tesseract handed the bottom strip (real text on the left, noise
+  on the right) returned **14** confident words, while the same strip cropped to
+  the real monitor returned **252**. The noise wrecks recognition of everything in
+  the image, so the whole bottom band came back almost empty and that row of the
+  screen got no hints. Masking the void to black didn't help — a band far wider
+  than its content fails on its own. The fix is to make OCR **monitor-aware**: the
+  daemon asks RandR for the real monitor rectangles (`Conn::monitors`) and the
+  cache plans bands *per monitor*, so a band is never wider or taller than one
+  display and never reaches into the void. Change detection learns the same
+  lesson — a differing pixel only counts when a monitor actually covers it, so the
+  void's perpetual churn (it is never baselined, so it always "differs") can't
+  leak through a monitor's not-cell-aligned bottom edge and force a phantom
+  re-read. Single-head (or RandR-less) setups fall back to one whole-screen region
+  and behave exactly as before.
 - **§3.2 Parsing** → `ocr/tsv.rs`. The TSV header maps column names to indices, so
   the layout isn't hard-coded; level-5 (word) rows above the confidence threshold
   become word boxes in absolute screen coordinates. Pure and tested.

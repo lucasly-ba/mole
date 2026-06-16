@@ -12,11 +12,13 @@
 //!
 //! Tesseract is single-threaded per image and scanning a whole desktop is the
 //! dominant cost of a hint, so OCR runs on horizontal bands in parallel (one
-//! `tesseract` process each). On a cold scan the bands tile the whole screen; on
-//! a warm scan the [`cache`] returns only tight bands around what actually
-//! changed, so a hint on a mostly-static screen re-reads little or nothing. Bands
-//! overlap (and large changes are split for parallelism), so a line on a cut is
-//! fully seen by one band; the duplicate words that creates are removed by
+//! `tesseract` process each). On a cold scan the bands tile each monitor; on a
+//! warm scan the [`cache`] returns only tight bands around what actually changed,
+//! so a hint on a mostly-static screen re-reads little or nothing. Every band
+//! stays inside a single monitor — on a multi-head root the bounding box can
+//! include a void no display covers, and a band spanning it recognises nothing.
+//! Bands overlap (and large changes are split for parallelism), so a line on a cut
+//! is fully seen by one band; the duplicate words that creates are removed by
 //! [`dedup_words`].
 
 mod cache;
@@ -36,7 +38,7 @@ use crate::capture::Screen;
 use crate::config::Config;
 use crate::detect::{self, Detector, Element, Scan, ScanRest};
 use crate::error::{Error, Result};
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 
 use phrase::{Grouping, Word};
 use tesseract::Tesseract;
@@ -127,7 +129,7 @@ impl OcrDetector {
             &self.cancel,
         )?;
         for (band, words) in fresh {
-            cache.splice(&rgb, region.y, band, words);
+            cache.splice(&rgb, (region.x, region.y), band, words);
         }
         Ok(dedup_words(cache.all_words()))
     }
@@ -269,7 +271,7 @@ impl Detector for OcrDetector {
                 )?;
                 let mut cache = self.cache.lock().unwrap();
                 for (band, words) in fresh {
-                    cache.splice(&rgb, region.y, band, words);
+                    cache.splice(&rgb, (region.x, region.y), band, words);
                 }
                 cache.all_words()
             };
@@ -280,9 +282,11 @@ impl Detector for OcrDetector {
             });
         }
 
-        let ranges: Vec<(i32, i32)> = bands
+        // Absolute rectangles of the changed bands, so we can tell which cached
+        // words fall inside a re-read region (per monitor, not just by row).
+        let ranges: Vec<Rect> = bands
             .iter()
-            .map(|b| (region.y + b.y0, region.y + b.y0 + b.h))
+            .map(|b| Rect::new(region.x + b.x0, region.y + b.y0, b.w, b.h))
             .collect();
 
         // Phase 1: show *every* cached word immediately — including the ones
@@ -297,7 +301,7 @@ impl Detector for OcrDetector {
         // tell a genuinely-new word from one already on screen.
         let stale_inside: Vec<Word> = cached
             .into_iter()
-            .filter(|w| in_ranges(w.rect.center().y, &ranges))
+            .filter(|w| in_rects(w.rect.center(), &ranges))
             .collect();
 
         // Phase 2: OCR the changed bands off-thread, splice them into the cache,
@@ -315,12 +319,12 @@ impl Detector for OcrDetector {
             let inside: Vec<Word> = {
                 let mut cache = cache.lock().unwrap();
                 for (band, words) in fresh {
-                    cache.splice(&rgb, region.y, band, words);
+                    cache.splice(&rgb, (region.x, region.y), band, words);
                 }
                 cache
                     .all_words()
                     .into_iter()
-                    .filter(|w| in_ranges(w.rect.center().y, &ranges))
+                    .filter(|w| in_rects(w.rect.center(), &ranges))
                     .collect()
             };
             let added: Vec<Word> = dedup_words(inside)
@@ -342,9 +346,9 @@ impl Detector for OcrDetector {
     }
 }
 
-/// True when `y` falls in any of the (start, end) ranges.
-fn in_ranges(y: i32, ranges: &[(i32, i32)]) -> bool {
-    ranges.iter().any(|&(a, b)| y >= a && y < b)
+/// True when point `p` falls inside any of the `rects`.
+fn in_rects(p: Point, rects: &[Rect]) -> bool {
+    rects.iter().any(|r| r.contains(p))
 }
 
 /// Maximum drift (px) between two boxes still considered the same word, absorbing
@@ -401,9 +405,9 @@ fn ocr_bands(
             .iter()
             .map(|&b| {
                 scope.spawn(move || -> Result<(Band, Vec<Word>)> {
-                    let ppm = tesseract::encode_ppm_band(rgb, width, b.y0, b.h);
+                    let ppm = tesseract::encode_ppm_band(rgb, width, b.x0, b.y0, b.w, b.h);
                     let raw = tess.run(ppm, threads, cancel)?;
-                    let area = Rect::new(region.x, region.y + b.y0, width, b.h);
+                    let area = Rect::new(region.x + b.x0, region.y + b.y0, b.w, b.h);
                     Ok((b, tsv::parse(&raw, area, min_conf)))
                 })
             })
@@ -497,16 +501,16 @@ mod tests {
 
     #[test]
     fn band_coverage_merges_overlaps() {
+        let band = |y0, h| Band {
+            x0: 0,
+            y0,
+            w: 100,
+            h,
+        };
         // Disjoint bands sum.
-        assert_eq!(
-            band_coverage(&[Band { y0: 0, h: 100 }, Band { y0: 300, h: 50 }]),
-            150
-        );
+        assert_eq!(band_coverage(&[band(0, 100), band(300, 50)]), 150);
         // Overlapping bands count the union once.
-        assert_eq!(
-            band_coverage(&[Band { y0: 0, h: 100 }, Band { y0: 80, h: 100 }]),
-            180
-        );
+        assert_eq!(band_coverage(&[band(0, 100), band(80, 100)]), 180);
     }
 
     #[test]

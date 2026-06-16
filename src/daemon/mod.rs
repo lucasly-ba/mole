@@ -58,6 +58,12 @@ impl Daemon {
     /// Bind the socket, start the config watcher, and serve until killed.
     pub fn run(self) -> Result<()> {
         let conn = Conn::open()?;
+        // Teach the cache the physical monitor layout so OCR bands stay inside real
+        // displays — on a multi-head root the void beside a shorter monitor holds
+        // undefined pixels that otherwise destroy recognition of the whole band.
+        let monitors = conn.monitors();
+        log::info!("displays: {monitors:?}");
+        self.scan_cache.lock().unwrap().set_monitors(monitors);
         let listener = self.bind_socket()?;
         log::info!("daemon listening on {:?}", self.socket_path);
 
