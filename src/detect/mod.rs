@@ -2,7 +2,7 @@
 //!
 //! mole is OCR-driven. When a hint interaction starts, the screen is captured
 //! and read with Tesseract, and the recognised words are grouped into
-//! *phrase-level* targets — a run of words separated by spaces, like a line of a
+//! *phrase-level* targets: a run of words separated by spaces, like a line of a
 //! menu or a sentence in a document. Every visible piece of text becomes
 //! something you can jump to, regardless of whether the app underneath exposes
 //! anything to accessibility.
@@ -50,7 +50,7 @@ pub type ScanRest = Box<dyn FnOnce() -> Result<Vec<Element>> + Send>;
 
 /// A scan split into what's ready now and what still needs work.
 pub struct Scan {
-    /// Elements available immediately (e.g. from cache) — shown right away.
+    /// Elements available immediately (e.g. from cache), shown right away.
     pub ready: Vec<Element>,
     /// If present, the rest of the scan to finish in the background; its result
     /// is the *additional* elements to fold in once ready.

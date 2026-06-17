@@ -3,9 +3,9 @@
 //! A [`Session`] wires together capture → detect → label → overlay → input →
 //! act. The daemon creates one per trigger. Modes:
 //!
-//! * [`Mode::Teleport`] — jump the pointer to a hinted element.
-//! * [`Mode::Click`] — jump and click (N times / different buttons).
-//! * [`Mode::Drag`] — pick two hints and drag between them, copying the
+//! * [`Mode::Teleport`]: jump the pointer to a hinted element.
+//! * [`Mode::Click`]: jump and click (N times / different buttons).
+//! * [`Mode::Drag`]: pick two hints and drag between them, copying the
 //!   resulting selection to the clipboard (Plan §4.2).
 //!
 //! Free pointer movement (Plan §1.3, hjkl) is [`Session::run_free_move`], which
@@ -502,7 +502,7 @@ impl<'a> Session<'a> {
 
     /// Build and map the free-move notice bar at the top of the screen, labelled
     /// with the current key bindings. Returns the live window (dropped to remove
-    /// it). Failure to show it is non-fatal — move mode still works.
+    /// it). Failure to show it is non-fatal; move mode still works.
     fn show_move_notice(&self) -> Option<Hud<'_>> {
         let k = &self.config.keys;
         let show_key = |s: &str| match s {

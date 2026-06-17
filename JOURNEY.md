@@ -1,7 +1,7 @@
 # The mole journey
 
 This is the long-form companion to the README: how mole is built, *why*
-each decision was made, how the plan maps onto the code, and — honestly — what is
+each decision was made, how the plan maps onto the code, and (honestly) what is
 runtime-tested versus what is structurally correct but needs a real display to
 prove out. If you're returning to this project after a while, start here.
 
@@ -11,7 +11,7 @@ prove out. If you're returning to this project after a while, start here.
 
 The goal (rooted in `mouseless_plan.pdf`): press a key, get two-letter labels
 over the screen, type a label, and the pointer goes there. The
-hard parts aren't the idea — they're the systems plumbing:
+hard parts aren't the idea but the systems plumbing:
 
 - **What do you point at, and how do you find it?** This is the central design
   choice, and it changed (see below): mole hints **text**, found by reading the
@@ -40,7 +40,7 @@ feature that, in practice, the OCR path already covered.
 
 The bet mole makes instead: **almost everything you want to click is, or sits
 next to, a word.** So if you can jump to any *phrase* on screen, you can reach
-anything — with no dependency on app cooperation. That makes OCR the single
+anything, with no dependency on app cooperation. That makes OCR the single
 source of targets, and turns "group recognised words into phrase-sized targets"
 ([`detect/ocr/phrase.rs`](src/detect/ocr/phrase.rs)) into the heart of the tool.
 AT-SPI was removed outright.
@@ -92,26 +92,26 @@ the systems modules together; `daemon` drives `session`.
 
 ## 3. Plan → code, phase by phase
 
-### Phase 1 — Foundations
+### Phase 1: Foundations
 
 - **§1.1 Capture** → `capture.rs`. X11 `GetImage` into a `Screen` that also knows
   how to read a pixel and average a region (for contrast later). The plan's
   "only capture needed zones" is `Screen::capture_region`, used by `capture_full`.
 - **§1.2 Triggering.** The plan called for a global hotkey (`XGrabKey`). In
   practice every trigger comes from the WM binding a key to `exec mole <cmd>`,
-  which reaches the daemon over its Unix socket — so the WM already owns the
+  which reaches the daemon over its Unix socket, so the WM already owns the
   hotkey and mole needs no grab of its own. An early `XGrabKey` implementation
   existed but was removed as dead weight once socket triggering proved sufficient.
 - **§1.3 Free-move** → `session::run_free_move` + `x11/grab.rs` + `motion.rs`.
   Move mode should feel like a real mouse, so the pointer **glides** rather than
   jumping a fixed step: `motion::Glide` models a velocity (px/second) that starts
   at a base speed, accelerates the longer a direction is held, and is multiplied
-  by a **boost** key for crossing the screen — pure arithmetic with sub-pixel
+  by a **boost** key for crossing the screen: pure arithmetic with sub-pixel
   carry, unit-tested away from any X11. The session loop ticks it at ~125 Hz and
   warps the pointer by the per-frame delta. **Remappable keys**
-  (`move_left`/`down`/`up`/`right`, default hjkl) steer — and the **arrow keys**
+  (`move_left`/`down`/`up`/`right`, default hjkl) steer, and the **arrow keys**
   always do too (decoded as `KeyInput::Left`/`Right`/`Up`/`Down`); action keys click,
-  double-click, right-click, and toggle a drag-and-copy — so move mode is a full
+  double-click, right-click, and toggle a drag-and-copy, so move mode is a full
   pointer, not just a cursor nudger.
 
   Two design points worth keeping:
@@ -119,11 +119,11 @@ the systems modules together; `daemon` drives `session`.
     own (`x11::KeyboardGrab`): it grabs the keyboard on the root window
     (`owner_events = false`, so every key reaches us regardless of focus) and the
     pointer glides over the *live* desktop. That sidesteps the old "black screen
-    without a compositor" problem entirely — there is no overlay to paint — and
+    without a compositor" problem entirely (there is no overlay to paint), and
     synthetic clicks fall straight through to the apps beneath, since nothing is
     covering them.
   - **A visible notice.** Because the grab is windowless, move mode is otherwise
-    invisible — and since the grab suppresses the window manager's own hotkeys
+    invisible, and since the grab suppresses the window manager's own hotkeys
     (including the one that launched mole), a user who forgot they were in it
     would find their `mole teleport` key doing nothing. So a small hint-coloured
     legend (`render::hud` + a non-interactive `x11::Hud` window) sits at the top
@@ -134,16 +134,16 @@ the systems modules together; `daemon` drives `session`.
     auto-repeat) fakes a stream of `Release`+`Press` pairs sharing a timestamp.
     `KeyboardGrab::drain` drops a `Release` immediately followed by a same-key
     `Press` at the same time, so a held key reads as one press until it is truly
-    released — exactly the held-state the glide loop tracks.
+    released, the held-state the glide loop tracks.
 
-### Phase 2 — Overlay
+### Phase 2: Overlay
 
 - **§2.1 Overlay window** → `x11/overlay.rs`. 32-bit ARGB visual + colormap,
   `override_redirect` so the WM ignores it, keyboard grab while shown. The first
-  cut relied on a running compositor to blend the transparent pixels — with none
+  cut relied on a running compositor to blend the transparent pixels. With none
   you got a black screen with floating labels and no sense of *where* a jump
   would land. So the renderer now paints a frozen snapshot of the desktop (which
-  it already captured for OCR — see `render::screen_backdrop`) as an opaque
+  it already captured for OCR; see `render::screen_backdrop`) as an opaque
   backdrop, dimmed by `hints.dim`. The overlay is usable with no compositor; a
   compositor, if present, still shows the live desktop through the alpha.
 - **§2.2 Hint rendering** → `render/mod.rs` + `render/palette.rs`. **Key
@@ -157,7 +157,7 @@ the systems modules together; `daemon` drives `session`.
   reused: each keystroke's repaint is then just a blit plus the labels, and the
   heavy pass runs *before* the overlay is mapped so showing it doesn't flash.
 
-### Phase 3 — Detection
+### Phase 3: Detection
 
 Detection is OCR, end to end, split into small single-purpose steps under
 `detect/ocr/`:
@@ -169,7 +169,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
   ("sparse text") so it finds text *anywhere*, not just in one assumed text block.
   **Speed:** OCR is by far the slowest stage (≈3 s on a 4480×1440 desktop) and
   Tesseract is single-threaded per image, so the screen is split into
-  `ocr.tiles` overlapping horizontal strips that are OCR'd in parallel — one
+  `ocr.tiles` overlapping horizontal strips that are OCR'd in parallel: one
   process per strip, each capped to a share of the cores via `OMP_THREAD_LIMIT`
   so they don't oversubscribe and thrash. That roughly halves scan time on a
   wide multi-core display. Downscaling was rejected: halving resolution lost
@@ -182,7 +182,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
   whole-screen pixels (the baseline) plus the flat list of words found. Each scan
   diffs the new capture against the baseline and re-OCRs **only the regions that
   changed**, splicing the fresh words in (words inside a re-read region replaced,
-  everything outside kept) — a hint on a static screen does no OCR at all.
+  everything outside kept). A hint on a static screen does no OCR at all.
 
   Two things make this robust on a real desktop. First, change is judged by
   *locality*, not an exact hash: the screen is a grid of small cells, a cell only
@@ -193,7 +193,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
   flicker re-OCR a whole region, so the cache never settled.) Second, the work is
   scoped to **tight bands**: the changed cells' rows are clustered into contiguous
   runs (padded by a margin so text straddling an edge is fully inside), and only
-  those full-width bands are OCR'd — a chat message near the bottom re-reads a
+  those full-width bands are OCR'd. A chat message near the bottom re-reads a
   thin band, not half the display. A cold scan (no baseline, or after a resize)
   tiles the whole screen into `tiles` overlapping bands; a very large change is
   likewise split into chunks. Either way the bands run in parallel, overlap so a
@@ -202,7 +202,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
 
   On top of that, a background thread watches the whole screen with the X DAMAGE
   extension and re-reads changed bands once the screen settles, so the cache is
-  usually already current when you trigger — the hint then appears with no scan at
+  usually already current when you trigger. The hint then appears with no scan at
   all. DAMAGE works here even with no compositor (verified by probe), and reports
   drawing only, not pointer motion, so moving the mouse never wakes it. The whole
   scan holds the cache lock so the on-demand hint and the background warm never
@@ -212,15 +212,15 @@ Detection is OCR, end to end, split into small single-purpose steps under
   zero-idle-cost mode.
 
   Finally, even when something *did* change, a hint needn't wait for it.
-  `Detector::detect_split` returns **every** cached word immediately — including
-  the ones inside the changed bands, at their last-known positions — plus a
+  `Detector::detect_split` returns **every** cached word immediately (including
+  the ones inside the changed bands, at their last-known positions), plus a
   closure that re-OCRs those bands. The insight: sweeping the mouse repaints the
   links and buttons under it (hover highlights), which flags those bands as
   "changed" even though the *text* didn't move; showing the cached hint there is
   instantly correct. The session (`select_incremental`) shows the ready hints at
   once, runs the closure on a worker thread, and folds in only the words that
-  weren't already on screen (`already_shown` — same text, near-identical position)
-  — so a merely-repainted region adds nothing and never flickers, while genuinely
+  weren't already on screen (`already_shown`: same text, near-identical position),
+  so a merely-repainted region adds nothing and never flickers, while genuinely
   new text pops in a fraction of a second later. Late hints are placed around the
   existing ones with labels drawn from a reserved pool, so on-screen labels never
   shift (and a key already typed is replayed onto the larger set). This split only
@@ -235,7 +235,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
   cached before you can trigger a hint. The result is that a hint is usually
   ~instant. The one remaining hazard is a *collision*: the on-demand hint and the
   background warm share one OCR-at-a-time lock (so they don't both fire tesseract
-  and thrash the cores — letting them run together measured ~2× slower for both),
+  and thrash the cores; letting them run together measured ~2× slower for both),
   so a hint triggered exactly while the pre-warm is mid-re-read would otherwise
   wait for it (tens of ms in a gap, up to ~1s on a full collision). Two non-fixes
   were measured and rejected first: reacting faster doesn't remove the collision,
@@ -246,12 +246,12 @@ Detection is OCR, end to end, split into small single-purpose steps under
   **Preempting the pre-warm** is what actually closes the collision, and it is
   now done. When a hint starts, the daemon `abort()`s the pre-warm's
   [`Cancel`](src/detect/ocr/cancel.rs) token, which kills its in-flight
-  `tesseract` children so it drops the cache lock immediately — the hint never
+  `tesseract` children so it drops the cache lock immediately. The hint never
   waits more than the time to reap a killed process. The subtle part is keeping a
   killed read from corrupting the cache: planning a scan no longer adopts the
   changed regions into the baseline; a band is adopted *only when its fresh words
-  are spliced back in* (`cache::ScanCache::splice`). So an aborted read — whose
-  bands were never spliced — leaves both the baseline and the cached words exactly
+  are spliced back in* (`cache::ScanCache::splice`). So an aborted read (whose
+  bands were never spliced) leaves both the baseline and the cached words exactly
   as they were, and those regions are simply re-planned on the next scan instead
   of being silently marked "already read" and going stale. The child is shared
   behind a lock that the aborter can reach, while its output is read off that lock,
@@ -261,7 +261,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
   **Multiple monitors, honestly.** A bug from a real dual-head desk: hints
   appeared everywhere *except* a strip along the bottom of one monitor. The two
   screens have different heights (2560×1440 beside 1920×1080), so the X root
-  window is the *bounding box* of both — 4480×1440 — and the bottom-right
+  window is the *bounding box* of both (4480×1440), and the bottom-right
   1920×360 of that box is a **void** no physical display covers. `GetImage`
   returns undefined, ever-changing pixels there. The catch isn't that the void
   has no text; it's that a full-root-width OCR band *spanning* the void is
@@ -269,12 +269,12 @@ Detection is OCR, end to end, split into small single-purpose steps under
   on the right) returned **14** confident words, while the same strip cropped to
   the real monitor returned **252**. The noise wrecks recognition of everything in
   the image, so the whole bottom band came back almost empty and that row of the
-  screen got no hints. Masking the void to black didn't help — a band far wider
+  screen got no hints. Masking the void to black didn't help: a band far wider
   than its content fails on its own. The fix is to make OCR **monitor-aware**: the
   daemon asks RandR for the real monitor rectangles (`Conn::monitors`) and the
   cache plans bands *per monitor*, so a band is never wider or taller than one
   display and never reaches into the void. Change detection learns the same
-  lesson — a differing pixel only counts when a monitor actually covers it, so the
+  lesson: a differing pixel only counts when a monitor actually covers it, so the
   void's perpetual churn (it is never baselined, so it always "differs") can't
   leak through a monitor's not-cell-aligned bottom edge and force a phantom
   re-read. Single-head (or RandR-less) setups fall back to one whole-screen region
@@ -284,7 +284,7 @@ Detection is OCR, end to end, split into small single-purpose steps under
   become word boxes in absolute screen coordinates. Pure and tested.
 - **§3.3 Word vs. phrase targets** → `ocr/phrase.rs` + `OcrDetector` granularity.
   Tesseract gives one box per word. **By default every word is its own hint**
-  (`ocr.hint_words = true`), so every word — including the ends of lines — is
+  (`ocr.hint_words = true`), so every word (including the ends of lines) is
   reachable; an earlier phrase-only default left the back half of each line with
   no hint at all. Set `hint_words = false` to merge words into phrases instead
   (fewer labels, but you only land at the start of each): cluster into lines
@@ -293,28 +293,28 @@ Detection is OCR, end to end, split into small single-purpose steps under
   separate controls stay distinct; a phrase's box is the union of its words', its
   text the words rejoined. **Drag always uses phrase granularity**
   (`Detector::detect_phrases`) regardless of the setting, so a whole sentence
-  stays selectable. The grouping is geometric — no pixels re-read — so it's
+  stays selectable. The grouping is geometric (no pixels re-read), so it's
   deterministic and exhaustively unit-tested.
 - **§3.3b Icon hints** → `detect/icon.rs` (`ocr.hint_icons`, on by default). Lots
-  of clickable UI carries no text — toolbar icons, favicons, window controls — so
+  of clickable UI carries no text (toolbar icons, favicons, window controls), so
   text hints alone can't reach it. Rather than reach for OpenCV, this finds them
   cheaply from the pixels already captured: lay an 8px grid, mark each cell whose
   lightest-to-darkest spread clears a threshold (an *edge*; flat fills are
   ignored), flood-fill the marked cells into 4-connected blobs, and keep the ones
-  that look like a control — icon-sized (16–80px), compact (fills enough of its
+  that look like a control: icon-sized (16-80px), compact (fills enough of its
   box), sitting in quiet padding (the ring around it is mostly edge-free, which is
   what separates a real icon from a fragment buried in text), and not overlapping
   a box OCR already hinted. The pass subsamples every other pixel, so it's cheap
-  enough to run on every hint. It's a heuristic — tuned live until a dense dev
-  desktop dropped from ~700 candidates to ~140 real ones — so it's honest about
+  enough to run on every hint. It's a heuristic (tuned live until a dense dev
+  desktop dropped from ~700 candidates to ~140 real ones), so it's honest about
   the odd stray hint on a busy image, and `hint_icons = false` turns it off.
 - **§3.4 Hint generation** → `hint/label.rs`. The algorithm grows a breadth-first
   frontier so labels are **prefix-free** (the instant your keys equal a label, the
-  choice is unambiguous — no Enter needed) and as short as possible. Live matching
+  choice is unambiguous, no Enter needed) and as short as possible. Live matching
   narrows candidates per keystroke; a dead-end key is rejected without being
   consumed. Placement is `hint/layout.rs`; the chosen point is the **start of the
   element's text** (left edge, vertically centred, nudged in to the first glyph),
-  not the phrase centre — a phrase target spans a whole line and its midpoint can
+  not the phrase centre: a phrase target spans a whole line and its midpoint can
   fall in a gap between words or past the clickable part, whereas the first glyphs
   are reliably on the thing you meant to click.
 
@@ -323,7 +323,7 @@ with fakes and open to a future backend) and a shared `finalize()` pass that dro
 too-small / off-screen boxes and sorts into reading order, so the shortest labels
 land top-left.
 
-### Phase 4 — Interactions
+### Phase 4: Interactions
 
 - **§4.1 Clicks** → `pointer.rs`. `XTestFakeButtonEvent` for left/right; `count`
   gives double-click / N-click.
@@ -333,7 +333,7 @@ land top-left.
   *sentence* selectable, drag mode lays **two** hints per phrase
   (`place_drag_hints`): one on the first glyph (`drag_start`, no inset) and one
   just past the last (`drag_end`). The earlier single-hint-per-phrase drag reused
-  the teleport target, which insets into the text — so the press began mid-word
+  the teleport target, which insets into the text, so the press began mid-word
   and the drag grabbed too little or nothing. The start/end pair lets you select
   one whole phrase (its start + its end hint) or span several lines.
 
@@ -343,11 +343,11 @@ the target(s) while the overlay is up, hides it, *then* acts.
 
 - **§4.3 Teleport is a clean jump.** An earlier version handed off from a
   teleport straight into free-move (`movement.teleport_then_move`) so the pointer
-  could be nudged after landing. It was removed: a teleport should just teleport —
-  predictable, no lingering keyboard grab. Fine-tuning lives in `mole move`, which
+  could be nudged after landing. It was removed: a teleport should just teleport.
+  It's predictable, with no lingering keyboard grab. Fine-tuning lives in `mole move`, which
   you trigger when you actually want it.
 
-### Phase 5 — Config & daemon
+### Phase 5: Config & daemon
 
 - **§5.1 Config** → `config/`. TOML + serde, every field optional with a default,
   validated on load, hot-reloaded by watching the *directory* (editors rename on
@@ -366,7 +366,7 @@ the target(s) while the overlay is up, hides it, *then* acts.
 | Clipboard | `arboard` | X11 backend is itself x11rb-based; handles PRIMARY↔CLIPBOARD |
 | Config | `serde` + `toml` + `notify` | Standard, ergonomic, hot-reload |
 | CLI | `clap` | Subcommands for free |
-| OCR | *(none)* — `tesseract` subprocess | Zero extra build deps; swappable |
+| OCR | *(none)*, a `tesseract` subprocess | Zero extra build deps; swappable |
 
 ## 5. What's tested vs. what needs a display
 
@@ -384,8 +384,8 @@ tests live inline (`#[cfg(test)]`) so they can reach private helpers.
 
 **Integration-tested** (`tests/pipeline.rs`): the seams between modules, which
 the isolated unit tests can't see. A `FakeDetector` implementing the public
-`Detector` trait feeds the exact chain `run_hint` uses — detect → `generate_labels`
-→ `place_hints` → `HintMatcher` — and asserts that typing a label lands on the
+`Detector` trait feeds the exact chain `run_hint` uses (detect → `generate_labels`
+→ `place_hints` → `HintMatcher`) and asserts that typing a label lands on the
 right *text start* (not the label-box corner or the phrase centre), that every
 label among 30 elements is reachable, that stacked elements stay individually
 selectable, that a
@@ -410,7 +410,7 @@ your screen and the phrases land where the text is (tune `min_confidence` /
   shapes would let `session.rs` stay unchanged. `wlr-layer-shell` for the
   overlay, `wlr-virtual-pointer` for input, the screencopy protocol for capture.
 - **Faster OCR.** Swap the `tesseract` subprocess for PaddleOCR behind the same
-  `Detector` trait — `detect/ocr/` is already isolated for it.
+  `Detector` trait. `detect/ocr/` is already isolated for it.
 - **Region scans.** OCR the focused window or the area under the cursor instead
   of the full screen, to cut latency on big displays.
 - **Grid mode** for the no-text case (icon-only toolbars, games), as a second

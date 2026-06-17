@@ -124,7 +124,7 @@ impl Renderer {
         self.render_onto(&backdrop, boxes, typed, screen)
     }
 
-    /// Render a small opaque legend bar sized to `text` — a hint-coloured box
+    /// Render a small opaque legend bar sized to `text`: a hint-coloured box
     /// with dark text, used as the free-move on-screen notice. Fully opaque so it
     /// reads correctly with no compositor; the caller maps it in a small window.
     pub fn hud(&self, text: &str) -> Result<Frame> {

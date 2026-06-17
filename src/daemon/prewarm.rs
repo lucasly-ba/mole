@@ -6,7 +6,7 @@
 //! triggers a hint, the cache is already current, so the on-demand scan finds
 //! nothing to re-read and the hints appear almost instantly.
 //!
-//! It deliberately does nothing while an interaction is active — otherwise it
+//! It deliberately does nothing while an interaction is active, because otherwise it
 //! would capture mole's own overlay and cache the hint labels as if they were
 //! screen text. DAMAGE reports only drawing, not pointer motion (the cursor is a
 //! hardware sprite), so ordinary mouse movement never wakes it.

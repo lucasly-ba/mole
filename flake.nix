@@ -1,5 +1,5 @@
 {
-  description = "mole — keyboard-only mouse navigation for Linux/X11 (Vimium-style hints via OCR)";
+  description = "mole: keyboard-only mouse navigation for Linux/X11 (Vimium-style hints via OCR)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -85,7 +85,7 @@
           # via `nix profile install` instead (see the README).
           shellHook = ''
             mole() { cargo run --quiet -- "$@"; }
-            echo "dev shell ready — 'mole daemon', 'mole click', … run the local build (cargo run)."
+            echo "dev shell ready: 'mole daemon', 'mole click', … run the local build (cargo run)."
           '';
         };
 

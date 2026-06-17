@@ -73,14 +73,14 @@ pub struct Keys {
     /// Double-click where the pointer is.
     pub double_click: String,
     /// Toggle a left-button drag: tap once to press, glide, tap again to
-    /// release — the selection is copied to the clipboard.
+    /// release, copying the selection to the clipboard.
     pub drag: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Movement {
-    /// Glide speed (px/second) the instant a direction is pressed — the base
+    /// Glide speed (px/second) the instant a direction is pressed: the base
     /// sensitivity for fine positioning.
     pub speed: f64,
     /// Hard ceiling (px/second) the glide accelerates to while a direction is
@@ -89,7 +89,7 @@ pub struct Movement {
     /// Speed multiplier applied per second a direction stays held, so the
     /// pointer glides faster the longer you hold it. `1.0` disables acceleration.
     pub acceleration: f64,
-    /// Speed multiplier while the `speed_boost` key is held — for crossing the
+    /// Speed multiplier while the `speed_boost` key is held, for crossing the
     /// screen quickly. `1.0` disables the boost.
     pub boost: f64,
 }
@@ -133,7 +133,7 @@ pub struct Ocr {
     pub line_tolerance: f64,
     /// How many horizontal strips to split the screen into and OCR in parallel.
     /// Tesseract is single-threaded per image, so on a multi-core machine this
-    /// is the biggest speed lever — `4` roughly halves scan time on a wide
+    /// is the biggest speed lever: `4` roughly halves scan time on a wide
     /// display. `1` disables tiling (one pass over the whole screen).
     pub tiles: usize,
     /// Keep the OCR cache warm in the background: watch the screen (X DAMAGE) and
@@ -141,14 +141,14 @@ pub struct Ocr {
     /// re-scan and appears instantly. Costs a little CPU when the screen changes;
     /// set `false` to OCR only on demand.
     pub prewarm: bool,
-    /// Hint every individual word (`true`, the default) so every word on screen —
-    /// including the ends of lines — is reachable. Set `false` to instead hint
+    /// Hint every individual word (`true`, the default) so every word on screen,
+    /// including the ends of lines, is reachable. Set `false` to instead hint
     /// whole phrases (a run of words on a line), which shows fewer labels but only
     /// lands you at the start of each phrase. Drag selection always works on
     /// phrases regardless, so a whole sentence stays selectable.
     pub hint_words: bool,
-    /// Also hint icon-only clickable things that carry no text — toolbar buttons,
-    /// tab favicons, window controls — found from the pixels (compact
+    /// Also hint icon-only clickable things that carry no text (toolbar buttons,
+    /// tab favicons, window controls) found from the pixels (compact
     /// high-contrast regions OCR didn't cover). `true` by default; set `false` if
     /// you only want text hints. Heuristic, so it may add the odd stray hint on a
     /// busy image.
