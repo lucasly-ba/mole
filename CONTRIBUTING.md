@@ -1,7 +1,7 @@
 # Contributing to Mole
 
 Thanks for your interest! Mole is a small, focused codebase and contributions are
-welcome — bug fixes, new backends, docs, anything.
+welcome: bug fixes, new backends, docs, anything.
 
 Read [JOURNEY.md](JOURNEY.md) first: it explains how the pipeline is shaped and
 *why*, which makes most changes obvious where they belong.
@@ -10,7 +10,7 @@ Read [JOURNEY.md](JOURNEY.md) first: it explains how the pipeline is shaped and
 
 Clone the repository.
 
-**Via SSH (recommended)** if you plan to contribute regularly — needs your
+**Via SSH (recommended)** if you plan to contribute regularly. This needs your
 [SSH keys on GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh):
 
 ```sh
@@ -29,8 +29,8 @@ cd mole
 
 To submit changes you push to your own fork and open a pull request from it.
 
-Fork `lucasly-ba/mole` with the **Fork** button (top-right of the GitHub page) —
-this creates `<username>/mole`. Add it as a remote:
+Fork `lucasly-ba/mole` with the **Fork** button (top-right of the GitHub page).
+This creates `<username>/mole`. Add it as a remote:
 
 ```sh
 # Using 'my-remote' as a placeholder name.
@@ -80,8 +80,8 @@ nix build                        # packaged binary, runs the sandboxed tests
 
 Every push and pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 
-- a plain-cargo job — `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`;
-- a Nix job — `nix build` and `nix flake check`.
+- a plain-cargo job: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`;
+- a Nix job: `nix build` and `nix flake check`.
 
 Run `cargo fmt` and `cargo clippy` locally before pushing and you'll match it.
 
@@ -90,7 +90,7 @@ Run `cargo fmt` and `cargo clippy` locally before pushing and you'll match it.
 Pure logic is unit-tested; the seams between modules are covered by
 `tests/pipeline.rs`. The X11, OCR-subprocess, overlay and clipboard paths touch a
 live display or another process, so they're verified on a real X session rather
-than in the unit suite (the flake and CI skip them headlessly — see JOURNEY §5).
+than in the unit suite (the flake and CI skip them headlessly; see JOURNEY §5).
 If you add pure logic, add tests for it; if you touch the display paths, say in
 the PR how you verified them.
 
