@@ -2,12 +2,12 @@
 //!
 //! Tesseract gives us one box per *word*. Hinting every single word would bury
 //! the screen in labels and make "jump to that menu entry" a multi-hint chore.
-//! Instead we merge words that read as a unit — a run of words on the same line,
-//! separated by ordinary spacing — into one [`Element`] whose box spans the
+//! Instead we merge words that read as a unit (a run of words on the same line,
+//! separated by ordinary spacing) into one [`Element`] whose box spans the
 //! whole phrase and whose text is the words joined back together.
 //!
 //! The grouping is purely geometric (it never re-reads pixels), so it is fast,
-//! deterministic and exhaustively unit-tested below — no display required.
+//! deterministic and exhaustively unit-tested below; no display required.
 
 use crate::detect::Element;
 use crate::geometry::Rect;

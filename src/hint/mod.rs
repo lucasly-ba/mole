@@ -1,7 +1,7 @@
 //! Hints: turning detected elements into typeable labels and back into a target.
 //!
-//! * [`label`] — generate prefix-free labels and match keystrokes against them.
-//! * [`layout`] — place label boxes on screen without overlapping.
+//! * [`label`]: generate prefix-free labels and match keystrokes against them.
+//! * [`layout`]: place label boxes on screen without overlapping.
 
 pub mod label;
 pub mod layout;

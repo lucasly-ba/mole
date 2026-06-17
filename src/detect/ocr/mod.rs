@@ -2,10 +2,10 @@
 //!
 //! This is mole's only detector. The work splits cleanly across helpers:
 //!
-//! * [`tesseract`] — run the `tesseract` subprocess over a screen capture.
-//! * [`tsv`] — parse its TSV output into confident word boxes.
-//! * [`phrase`] — group those words into the phrase-level targets we hint.
-//! * [`cache`] — remember words so unchanged regions of the screen aren't re-read.
+//! * [`tesseract`]: run the `tesseract` subprocess over a screen capture.
+//! * [`tsv`]: parse its TSV output into confident word boxes.
+//! * [`phrase`]: group those words into the phrase-level targets we hint.
+//! * [`cache`]: remember words so unchanged regions of the screen aren't re-read.
 //!
 //! [`OcrDetector`] wires them together and applies the shared [`detect::finalize`]
 //! pass (size filtering + reading order) to the result.
@@ -15,7 +15,7 @@
 //! `tesseract` process each). On a cold scan the bands tile each monitor; on a
 //! warm scan the [`cache`] returns only tight bands around what actually changed,
 //! so a hint on a mostly-static screen re-reads little or nothing. Every band
-//! stays inside a single monitor — on a multi-head root the bounding box can
+//! stays inside a single monitor: on a multi-head root the bounding box can
 //! include a void no display covers, and a band spanning it recognises nothing.
 //! Bands overlap (and large changes are split for parallelism), so a line on a cut
 //! is fully seen by one band; the duplicate words that creates are removed by
@@ -50,7 +50,7 @@ const TILE_OVERLAP: i32 = 80;
 /// How recognised words are turned into hintable targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Granularity {
-    /// One target per word — every word on screen is reachable.
+    /// One target per word: every word on screen is reachable.
     Word,
     /// One target per phrase (a run of words on a line).
     Phrase,
@@ -235,7 +235,7 @@ impl Detector for OcrDetector {
         };
 
         if bands.is_empty() {
-            // Nothing changed — every cached word is current.
+            // Nothing changed: every cached word is current.
             let ready = self.elements(dedup_words(cached), region);
             return Ok(Scan {
                 ready: self.with_icons(ready, &rgb, width, region),
@@ -244,7 +244,7 @@ impl Detector for OcrDetector {
         }
 
         // Only when *almost the whole screen* changed (a workspace switch, a fresh
-        // fullscreen window) is the cache too stale to be worth showing — the
+        // fullscreen window) is the cache too stale to be worth showing: the
         // cached hints would point at text that's gone. There we re-read
         // everything up front and show the complete, correct set at once. For any
         // lesser change we keep the cached hints on screen instantly and fold the
@@ -289,7 +289,7 @@ impl Detector for OcrDetector {
             .map(|b| Rect::new(region.x + b.x0, region.y + b.y0, b.w, b.h))
             .collect();
 
-        // Phase 1: show *every* cached word immediately — including the ones
+        // Phase 1: show *every* cached word immediately, including the ones
         // inside the changed bands, at their last-known positions. A hovered link
         // or a button that just repainted hasn't moved its text, so its hint is
         // correct instantly; this is what makes a hint feel instant even right
@@ -356,7 +356,7 @@ fn in_rects(p: Point, rects: &[Rect]) -> bool {
 const SAME_WORD_TOL: i32 = 6;
 
 /// Whether `word` is already represented among the `shown` (stale, still-on-screen)
-/// words — same text and near-identical position. Used so the background re-OCR of
+/// words, same text and near-identical position. Used so the background re-OCR of
 /// a repainted region only adds words that genuinely appeared or changed, instead
 /// of duplicating ones already on screen.
 fn already_shown(word: &Word, shown: &[Word]) -> bool {

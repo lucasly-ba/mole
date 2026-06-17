@@ -110,7 +110,7 @@ impl Conn {
     /// The rectangles of the physically connected monitors, in root coordinates.
     ///
     /// On a multi-head setup the root window is the *bounding box* of all
-    /// monitors, which can include regions no monitor actually covers — e.g. the
+    /// monitors, which can include regions no monitor actually covers, e.g. the
     /// area below a shorter monitor sitting beside a taller one. The server
     /// returns undefined pixels there, and OCR must not be fed them (a band that
     /// spans such a region recognises nothing). This reports the real per-monitor

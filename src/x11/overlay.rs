@@ -267,7 +267,7 @@ impl Drop for Overlay<'_> {
     }
 }
 
-/// A small, fixed-position, **non-interactive** overlay window — used for the
+/// A small, fixed-position, **non-interactive** overlay window for the
 /// free-move notice. Unlike [`Overlay`] it grabs nothing and covers only its own
 /// rectangle, so the live desktop and the pointer stay usable underneath; it just
 /// shows a label so the user knows move mode is active and how to leave it.

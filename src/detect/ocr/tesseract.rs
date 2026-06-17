@@ -99,7 +99,7 @@ impl Tesseract {
 }
 
 /// Encode the rectangle `[x0, x0 + w) × [y0, y0 + h)` of a tight RGB buffer as a
-/// PPM — one band of the screen for tiled OCR. `stride_w` is the full buffer width
+/// PPM, one band of the screen for tiled OCR. `stride_w` is the full buffer width
 /// in pixels; the band is usually narrower (it stays within one monitor), so this
 /// copies the cropped columns row by row. `rgb` is the whole-screen buffer from
 /// [`Screen::to_rgb`], reused across bands so it is built only once. Rows that
@@ -138,7 +138,7 @@ mod tests {
         let header = b"P6\n2 2\n255\n";
         assert!(ppm.starts_with(header), "PPM header declares the band size");
         let body = &ppm[header.len()..];
-        // Row 0: pixels 1,2 ; row 1: pixels 5,6 — the cropped columns only.
+        // Row 0: pixels 1,2 ; row 1: pixels 5,6, the cropped columns only.
         let expect: Vec<u8> = [1u8, 2, 5, 6].iter().flat_map(|&i| px(i)).collect();
         assert_eq!(body, &expect[..]);
     }

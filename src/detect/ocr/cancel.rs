@@ -9,9 +9,9 @@
 //! [`Cancel`] lets the daemon preempt that. When an interaction starts it
 //! [`abort`](Cancel::abort)s the pre-warm's token, which kills every running
 //! `tesseract` child, so the pre-warm drops the cache lock at once and the hint
-//! proceeds. The aborted read returns an error and — because the cache only
+//! proceeds. The aborted read returns an error and, because the cache only
 //! adopts a band into its baseline when that band is actually spliced in (see
-//! [`cache`](super::cache)) — leaves no stale words behind. The on-demand path
+//! [`cache`](super::cache)), leaves no stale words behind. The on-demand path
 //! carries its own token that is never aborted.
 
 use std::process::Child;
@@ -64,7 +64,7 @@ impl Cancel {
 
     /// Register a running child so [`abort`](Cancel::abort) can kill it, returning
     /// an id to [`unregister`](Cancel::unregister) it once reaped. If an abort
-    /// already landed, kill the child at once — this closes the window where a
+    /// already landed, kill the child at once. This closes the window where a
     /// child is spawned just after `abort` walked its list.
     pub(super) fn register(&self, child: Arc<Mutex<Child>>) -> u64 {
         let id = self.inner.next_id.fetch_add(1, Ordering::SeqCst);
