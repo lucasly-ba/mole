@@ -27,7 +27,7 @@ drag = "a"              # tap to start a drag, tap again to drop it (copies the 
 
 [movement]
 # Free-move glides like a real mouse rather than jumping a fixed step.
-# Glide speed (px/second) the moment a direction is pressed — the base
+# Glide speed (px/second) the moment a direction is pressed: the base
 # sensitivity for fine positioning. Raise for a faster pointer.
 speed = 700.0
 # Hard ceiling (px/second) the glide accelerates to while a direction is held.
@@ -74,7 +74,7 @@ max_word_gap = 1.0
 line_tolerance = 0.5
 # How many horizontal strips to split the screen into and OCR in parallel.
 # Tesseract is single-threaded per image, so on a multi-core machine this is a
-# big speed lever — 4 roughly halves a full scan on a wide display. More isn't
+# big speed lever: 4 roughly halves a full scan on a wide display. More isn't
 # always better: each strip is a separate tesseract process with fixed startup
 # cost, so too many strips adds overhead. Set to 1 to disable tiling.
 tiles = 4
@@ -83,13 +83,13 @@ tiles = 4
 # been looking at then needs no OCR and appears instantly. Costs a little CPU
 # while the screen is changing; set false to OCR purely on demand.
 prewarm = true
-# Hint every individual word (true) so every word — including the ends of lines —
+# Hint every individual word (true) so every word (including the ends of lines)
 # is reachable. Set false to hint whole phrases instead (fewer labels, but you
 # only land at the start of each phrase). Drag selection always works on phrases,
 # so a whole sentence stays selectable either way.
 hint_words = true
-# Also hint icon-only clickable things with no text — toolbar buttons, tab
-# favicons, window controls — found from the pixels. true by default; set false
+# Also hint icon-only clickable things with no text (toolbar buttons, tab
+# favicons, window controls) found from the pixels. true by default; set false
 # for text-only hints. Heuristic, so it may add the odd stray hint on a busy image.
 hint_icons = true
 

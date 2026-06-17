@@ -43,7 +43,7 @@ jobs:
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
 
-      # The X11/overlay tests need a live display, so skip them here — same set
+      # The X11/overlay tests need a live display, so skip them here, the same set
       # the flake's checkFlags skip in a sandbox. They're verified on a real
       # session (see JOURNEY §5).
       - name: Test
