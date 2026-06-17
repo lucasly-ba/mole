@@ -4,7 +4,7 @@
 
 **Keyboard-only mouse navigation for Linux/X11.** Press a key and Mole labels
 every word on your screen with a short hint. Type a label and the pointer
-teleports there — then click, drag, or keep moving by keyboard.
+teleports there, then click, drag, or keep moving by keyboard.
 
 The name fits twice over: **mo**use-**le**ss, and a mole tunnels straight to
 wherever you point.
@@ -20,19 +20,19 @@ wherever you point.
 
 - **Hint every word** on screen and **teleport** the pointer to it (set
   `ocr.hint_words = false` for fewer, phrase-level hints instead).
-- **Hint icons & buttons** that have no text too — toolbar icons, favicons,
-  window controls — so you can click them by keyboard (`ocr.hint_icons`).
-- **Click** — left, right, or double.
-- **Drag & select** a whole sentence — each phrase gets a hint at its start and
-  its end — copied straight to the clipboard.
-- **Move** — glide the pointer with `hjkl` like a real mouse: it accelerates
+- **Hint icons & buttons** that have no text too (toolbar icons, favicons,
+  window controls), so you can click them by keyboard (`ocr.hint_icons`).
+- **Click**: left, right, or double.
+- **Drag & select** a whole sentence (each phrase gets a hint at its start and
+  its end), copied straight to the clipboard.
+- **Move**: glide the pointer with `hjkl` like a real mouse. It accelerates
   while you hold a direction, a boost key crosses the screen fast, and you can
   click, double-click, right-click, or drag-and-copy without leaving move mode.
 
 ## Installation
 
-Mole is a Cargo project. It needs two system packages — **cairo** (to build) and
-**tesseract** (at runtime) — both in every major distro's repositories. Then
+Mole is a Cargo project. It needs two system packages, **cairo** (to build) and
+**tesseract** (at runtime), both in every major distro's repositories. Then
 build and put `mole` on your `PATH`:
 
 ```sh
@@ -57,7 +57,7 @@ NixOS prefer this over `cargo install`.
 ## Usage
 
 Mole runs as a daemon and is triggered by a small client command. Bind that
-command to a key in whatever runs your session — your window manager, desktop
+command to a key in whatever runs your session: your window manager, desktop
 environment, or a hotkey daemon such as `sxhkd`.
 
 ```sh
@@ -78,7 +78,7 @@ While hints are showing: type a label to pick it, **Backspace** to correct,
 
 In `move` mode the pointer glides over the live desktop: `hjkl` **or the arrow
 keys** steer (hold to accelerate), **Space** boosts the speed, **f**/**d**/**s**
-left-/right-/double-click, and **a** toggles a drag — tap to start, glide, tap
+left-/right-/double-click, and **a** toggles a drag: tap to start, glide, tap
 again to drop and copy the selection. **Esc** exits. A small legend at the top of
 the screen shows these the whole time move mode is active (the keyboard is grabbed
 while it is, so your other mole hotkeys pause until you press Esc). The letter
@@ -95,12 +95,12 @@ systemctl --user enable --now mole.service
 ```
 
 If the daemon can't reach your screen, your session isn't passing `DISPLAY` /
-`XAUTHORITY` through to systemd — the unit file's comments show the one-line fix.
+`XAUTHORITY` through to systemd. The unit file's comments show the one-line fix.
 
 ## Configuration
 
 Mole reads `~/.config/mole/config.toml` (override with `--config`) and
-hot-reloads it on save. Every setting is optional — run `mole dump-config` for
+hot-reloads it on save. Every setting is optional. Run `mole dump-config` for
 the annotated default, or copy [`mole.example.toml`](mole.example.toml).
 
 ```toml
@@ -135,12 +135,12 @@ font_size = 13.0
 
 - **X11 only** for now; Wayland is planned.
 - **Tiny or stylised text** can be missed or misread.
-- **Icon hints are heuristic** — found from pixel contrast, so a busy image may
+- **Icon hints are heuristic**: found from pixel contrast, so a busy image may
   get a stray hint and a very faint control may be missed (`ocr.hint_icons`).
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). For the
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). For the
 design and the reasoning behind the code, read [JOURNEY.md](JOURNEY.md).
 
 ## License
