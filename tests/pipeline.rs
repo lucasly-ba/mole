@@ -3,7 +3,7 @@
 //! The per-module unit tests check each stage in isolation. These integration
 //! tests check the *seams*: a [`Detector`]'s output flowing through label
 //! generation, anti-overlap layout and keystroke matching, exactly as
-//! `session::Session::run_hint` wires them together — minus the X11/cairo I/O,
+//! `session::Session::run_hint` wires them together, minus the X11/cairo I/O,
 //! which needs a real display and is covered by `JOURNEY.md §5` instead.
 //!
 //! Being a `tests/` crate, this sees only mole's public API, so it doubles
@@ -35,7 +35,7 @@ impl Detector for FakeDetector {
 }
 
 /// A blank off-screen-free capture to satisfy the [`Detector`] signature and the
-/// layout's screen bounds. Contents don't matter here — nothing samples pixels.
+/// layout's screen bounds. Contents don't matter here; nothing samples pixels.
 fn blank_screen(w: i32, h: i32) -> Screen {
     Screen::from_raw(
         Rect::new(0, 0, w, h),
@@ -223,7 +223,7 @@ fn boxes_stay_on_screen_for_edge_elements() {
 #[test]
 fn no_elements_yields_no_hints() {
     // The "nothing hintable" branch of run_hint: empty detection means no labels
-    // and no boxes — and crucially, generate_labels(_, 0) must not panic.
+    // and no boxes, and crucially, generate_labels(_, 0) must not panic.
     let detector = FakeDetector { elements: vec![] };
     let screen = blank_screen(800, 600);
     let boxes = run_layout(&detector, &screen).unwrap();
