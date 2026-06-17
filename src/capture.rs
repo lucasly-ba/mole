@@ -90,7 +90,7 @@ impl Screen {
         &self.data
     }
 
-    /// The capture as a tight, top-to-bottom, 3-bytes-per-pixel **RGB** buffer —
+    /// The capture as a tight, top-to-bottom, 3-bytes-per-pixel **RGB** buffer,
     /// the form OCR (and PPM) want. Converts from the server-native BGRX layout
     /// in a single pass over the raw bytes, so it avoids the per-pixel,
     /// bounds-checked sampling of [`Screen::pixel`] on the hot path (this runs on

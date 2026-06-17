@@ -3,8 +3,8 @@
 //! Given an alphabet and a number of targets, [`generate_labels`] produces a set
 //! of short strings with two guarantees:
 //!
-//! 1. **Uniqueness** — no two labels are equal.
-//! 2. **Prefix-freedom** — no label is a prefix of another, so the moment the
+//! 1. **Uniqueness**: no two labels are equal.
+//! 2. **Prefix-freedom**: no label is a prefix of another, so the moment the
 //!    typed keys equal a label the choice is unambiguous and we can fire
 //!    immediately.
 //!

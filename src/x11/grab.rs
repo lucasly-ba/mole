@@ -3,7 +3,7 @@
 //! Free-move shows nothing of its own: the pointer glides over the *live*
 //! desktop and any clicks fall through to the apps beneath. So, unlike the hint
 //! [`Overlay`](crate::x11::overlay::Overlay), there is no window and no rendering
-//! at all — and therefore none of the "black screen without a compositor"
+//! at all, and therefore none of the "black screen without a compositor"
 //! trouble that forced the overlay to paint a frozen screenshot. We simply grab
 //! the keyboard on the root window (`owner_events = false`, so every key reaches
 //! us regardless of which window has focus), read the key transitions, and warp
@@ -70,7 +70,7 @@ impl<'a> KeyboardGrab<'a> {
     /// Without detectable auto-repeat the server fakes a held key as a stream of
     /// `Release`+`Press` pairs sharing a timestamp. Those are not real up/down
     /// events, so a `Release` immediately followed by a same-key `Press` at the
-    /// same time is dropped entirely — a held key then yields just its opening
+    /// same time is dropped entirely. A held key then yields just its opening
     /// press and its closing release, which is exactly the held-state the move
     /// loop tracks.
     pub fn drain(&self) -> Result<Vec<KeyTransition>> {

@@ -2,8 +2,8 @@
 //!
 //! Keyboard-only mouse navigation for Linux/X11. A background daemon waits for a
 //! trigger, reads every line of text on screen with OCR, draws a transparent
-//! overlay that labels each phrase with a couple of letters, and teleports — or
-//! clicks, or drags — the pointer to whichever label you type. Between triggers
+//! overlay that labels each phrase with a couple of letters, and teleports (or
+//! clicks, or drags) the pointer to whichever label you type. Between triggers
 //! the same daemon also does free `hjkl` pointer movement, no scanning involved.
 //!
 //! The crate is split so each concern is testable in isolation:

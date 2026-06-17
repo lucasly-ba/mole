@@ -6,12 +6,12 @@
 //! ultimately jumps to is the *start* of the element's text (its left edge,
 //! vertically centred), not the phrase centre: a phrase target spans a whole
 //! line, and its midpoint can land in a gap between words or past the clickable
-//! part — the first glyphs are where you actually want to click.
+//! part. The first glyphs are where you actually want to click.
 //!
 //! Drag selection ([`place_drag_hints`]) is different: each phrase gets *two*
 //! hints, one on the first glyph and one just past the last, so you can pick the
-//! start of one phrase and the end of another and drag-select everything between
-//! — a whole sentence, copied to the clipboard (Plan §4.2).
+//! start of one phrase and the end of another and drag-select everything between:
+//! a whole sentence, copied to the clipboard (Plan §4.2).
 
 use crate::detect::Element;
 use crate::geometry::{Point, Rect};
@@ -28,7 +28,7 @@ pub struct HintBox {
     pub target: Point,
 }
 
-/// The point to jump to for an element: the start of its text — the left edge,
+/// The point to jump to for an element: the start of its text, the left edge,
 /// vertically centred, nudged in by about half a line height so it lands on the
 /// first glyph rather than the very edge (or a gap before it).
 fn text_start(rect: Rect) -> Point {
@@ -41,7 +41,7 @@ fn text_start(rect: Rect) -> Point {
 /// the ink, so a press *on* the left edge lands inside the first glyph and the
 /// selection starts at the second character; nudging out by this margin puts the
 /// press in the gap just before the first glyph (and the release just past the
-/// last), so the whole phrase — first letter included — is selected.
+/// last), so the whole phrase (first letter included) is selected.
 fn drag_margin(rect: Rect) -> i32 {
     (rect.height / 2).clamp(3, 14)
 }
@@ -105,7 +105,7 @@ pub fn place_hints(
 }
 
 /// Like [`place_hints`], but lay the new boxes out *around* `existing` ones
-/// without moving them — used when late-arriving (background-OCR'd) hints are
+/// without moving them, used when late-arriving (background-OCR'd) hints are
 /// added to an overlay that's already up. Returns only the newly placed boxes;
 /// their `index` continues after `existing`.
 pub fn place_hints_avoiding(
@@ -248,7 +248,7 @@ mod tests {
         let els = [elem(100, 100, 400, 20)];
         let labels = vec!["aa".to_string()];
         let boxes = place_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 1920, 1080));
-        // Left edge + half a line height in, vertically centred — near the first
+        // Left edge + half a line height in, vertically centred, near the first
         // glyph, well left of the phrase centre (which would be x=300).
         assert_eq!(boxes[0].target, Point::new(110, 110));
     }
@@ -287,7 +287,7 @@ mod tests {
     #[should_panic(expected = "two labels per element")]
     fn drag_hints_require_two_labels_per_phrase() {
         let els = [elem(0, 0, 40, 16)];
-        let labels = vec!["aa".to_string()]; // only one — should be two
+        let labels = vec!["aa".to_string()]; // only one, should be two
         place_drag_hints(&els, &labels, 13.0, 4, Rect::new(0, 0, 800, 600));
     }
 

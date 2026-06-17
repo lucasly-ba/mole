@@ -17,12 +17,12 @@
 //!   or two cells and is ignored; a scroll or a typed-out line is many and is
 //!   caught. (An exact hash made every flicker re-OCR a whole region.)
 //! * **Tight bands.** Only the changed rows (plus a margin for text that straddles
-//!   a boundary) are re-read, not the whole strip — a chat message appearing near
+//!   a boundary) are re-read, not the whole strip. A chat message appearing near
 //!   the bottom of the screen re-reads a thin band, not half the display.
 //!
 //! On a cold scan (or after a resize/reload) there is no baseline, so the work is
-//! the whole screen, split into `tiles` overlapping bands for parallelism — per
-//! monitor, so a band never spans the void beside a shorter head in a multi-head
+//! the whole screen, split into `tiles` overlapping bands for parallelism, one
+//! per monitor, so a band never spans the void beside a shorter head in a multi-head
 //! bounding box (those undefined pixels destroy recognition of the whole band).
 
 use super::phrase::Word;
@@ -42,8 +42,8 @@ const BAND_MARGIN: i32 = 64;
 
 /// A rectangular region to OCR, in capture-local coordinates (the top-left of the
 /// captured region is the origin). A band never spans more than one monitor, so
-/// Tesseract is never handed an image wider or taller than the real content in it
-/// — the area beyond a shorter monitor in a multi-head bounding box holds
+/// Tesseract is never handed an image wider or taller than the real content in it.
+/// The area beyond a shorter monitor in a multi-head bounding box holds
 /// undefined pixels that wreck recognition of everything else in the same image.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Band {
@@ -71,7 +71,7 @@ pub struct ScanCache {
     /// these so a band never covers a phantom region of the root bounding box.
     /// Empty means "treat the whole capture as one screen" (single-head default).
     monitors: Vec<Rect>,
-    /// Whole-screen RGB at the last scan — the baseline bands diff against.
+    /// Whole-screen RGB at the last scan: the baseline bands diff against.
     prev: Vec<u8>,
     have_prev: bool,
     /// All words currently believed on screen, in absolute coordinates.
@@ -141,7 +141,7 @@ impl ScanCache {
     /// whole screen as `tiles` overlapping bands; warm scans return tight bands
     /// around what changed, or nothing if only noise moved.
     ///
-    /// Planning does **not** touch the baseline — each band is adopted only when
+    /// Planning does **not** touch the baseline: each band is adopted only when
     /// it is actually [`splice`](ScanCache::splice)d back in. So a scan that is
     /// aborted before its bands are read leaves the baseline (and the cached
     /// words) untouched, and those regions are simply re-planned next time rather
@@ -227,7 +227,7 @@ impl ScanCache {
 
     /// Bands to re-read: within each monitor, the changed cell-rows clustered into
     /// vertical runs (padded by [`BAND_MARGIN`], clipped to the monitor). Cells
-    /// outside every monitor are ignored — that void is where a multi-head root
+    /// outside every monitor are ignored: that void is where a multi-head root
     /// holds the ever-changing undefined pixels that must never trip a re-read.
     /// Empty if only noise (≤ [`NOISE_CELLS`] cells across all monitors) moved.
     fn changed_bands(&self, rgb: &[u8], width: i32, height: i32, regions: &[Rect]) -> Vec<Band> {
@@ -535,7 +535,7 @@ mod tests {
         vec![Rect::new(0, 0, 600, 800), Rect::new(600, 0, 400, 500)]
     }
 
-    /// True when a band reaches into the void beside the shorter monitor — the
+    /// True when a band reaches into the void beside the shorter monitor: the
     /// region (x ≥ 600, y ≥ 500) the bug used to feed to OCR.
     fn enters_void(b: &Band) -> bool {
         b.x0 + b.w > 600 && b.y0 + b.h > 500
@@ -547,7 +547,7 @@ mod tests {
         c.set_monitors(mismatched_heads());
         let bands = c.plan(&rgb(1000, 800), 1000, 800, TILES, 20);
         // Every band sits within exactly one head (full head width, inside its
-        // height) — never the full 1000px bounding-box width.
+        // height), never the full 1000px bounding-box width.
         for b in &bands {
             let in_left = b.x0 == 0 && b.w == 600 && b.y0 + b.h <= 800;
             let in_right = b.x0 == 600 && b.w == 400 && b.y0 + b.h <= 500;
@@ -568,7 +568,7 @@ mod tests {
         for &b in &cold {
             c.splice(&buf, (0, 0), b, vec![]);
         }
-        // A change at rows 600..640 — below the short head, so only the tall head
+        // A change at rows 600..640, below the short head, so only the tall head
         // covers it. The re-read band must be the tall head's width, never wider.
         let mut tweaked = buf.clone();
         rewrite_rows(&mut tweaked, 1000, 600, 640);
@@ -593,7 +593,7 @@ mod tests {
         for &b in &cold {
             c.splice(&buf, (0, 0), b, vec![]);
         }
-        // Scribble all over the void (x ≥ 600, y ≥ 500) — the undefined region the
+        // Scribble all over the void (x ≥ 600, y ≥ 500), the undefined region the
         // server fills with noise every frame. No monitor covers it, so a scan
         // must ignore it entirely rather than re-OCR a phantom band.
         let mut tweaked = buf.clone();

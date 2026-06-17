@@ -2,7 +2,7 @@
 //!
 //! Running mole as a daemon keeps latency low: the X connection, keysym map
 //! and detectors are all set up once, so a trigger only has to capture, detect
-//! and draw. Triggers arrive over a Unix socket — the natural fit for i3's
+//! and draw. Triggers arrive over a Unix socket, the natural fit for i3's
 //! `bindsym ... exec mole click`.
 //!
 //! Config is hot-reloaded on a background thread (Plan §5.1); interactions run
@@ -59,7 +59,7 @@ impl Daemon {
     pub fn run(self) -> Result<()> {
         let conn = Conn::open()?;
         // Teach the cache the physical monitor layout so OCR bands stay inside real
-        // displays — on a multi-head root the void beside a shorter monitor holds
+        // displays: on a multi-head root the void beside a shorter monitor holds
         // undefined pixels that otherwise destroy recognition of the whole band.
         let monitors = conn.monitors();
         log::info!("displays: {monitors:?}");

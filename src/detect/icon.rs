@@ -1,14 +1,14 @@
 //! Icon / button detection: hint things you can click that have no text.
 //!
-//! OCR finds text, but a lot of clickable UI is icon-only — toolbar buttons,
+//! OCR finds text, but a lot of clickable UI is icon-only: toolbar buttons,
 //! tab favicons, the window controls, a hamburger menu. Those carry no glyphs
 //! for Tesseract to read, so they'd be unreachable with text hints alone.
 //!
 //! This finds them cheaply from the pixels, no extra processes: lay a fine grid
 //! over the screen, mark each cell that holds an *edge* (a real spread between
-//! its lightest and darkest pixel — flat background is ignored), cluster the
-//! marked cells into connected blobs, and keep the blobs that look like an icon
-//! — roughly icon-sized, compact, and not sitting on text we already hinted. It
+//! its lightest and darkest pixel; flat background is ignored), cluster the
+//! marked cells into connected blobs, and keep the blobs that look like an icon:
+//! roughly icon-sized, compact, and not sitting on text we already hinted. It
 //! is heuristic and deliberately conservative: a handful of stray hints on a
 //! busy image is a fair price for being able to click the toolbar.
 
@@ -22,10 +22,10 @@ const CELL: i32 = 8;
 /// count as holding an edge (0..=765 over summed RGB). Shrugs off gradients and
 /// anti-aliasing on a flat fill.
 const EDGE_SPREAD: i32 = 90;
-/// Icon bounding box must be at least this wide/tall (px) — below it is a single
+/// Icon bounding box must be at least this wide/tall (px). Below it is a single
 /// glyph or speck, not a control.
 const MIN_ICON: i32 = 16;
-/// …and at most this wide/tall (px) — above it is an image or a text block.
+/// …and at most this wide/tall (px). Above it is an image or a text block.
 const MAX_ICON: i32 = 80;
 /// Reject very elongated blobs (a rule, a separator, a missed line of text):
 /// the longer side may be at most this multiple of the shorter.
@@ -34,11 +34,11 @@ const MAX_ASPECT: f64 = 3.2;
 /// control rather than a sparse scattering of edges.
 const MIN_FILL: f64 = 0.30;
 /// An icon sits in padding, so the ring of cells just outside its box should be
-/// mostly quiet. Reject candidates whose surrounding ring is busier than this —
-/// that's a fragment embedded in text or dense UI, not a standalone control.
+/// mostly quiet. Reject candidates whose surrounding ring is busier than this.
+/// That's a fragment embedded in text or dense UI, not a standalone control.
 const MAX_RING_BUSY: f64 = 0.22;
 /// Skip a candidate that overlaps an already-hinted text box by more than this
-/// fraction of the candidate's area — it's text, not an icon.
+/// fraction of the candidate's area: it's text, not an icon.
 const MAX_TEXT_OVERLAP: f64 = 0.35;
 /// Hard cap on icon hints, so a pathological screen can't bury everything.
 const MAX_ICONS: usize = 200;
@@ -90,7 +90,7 @@ pub fn detect(
     icons
 }
 
-/// Mark every grid cell that holds an edge — a spread between its lightest and
+/// Mark every grid cell that holds an edge: a spread between its lightest and
 /// darkest summed-RGB pixel above [`EDGE_SPREAD`].
 fn edge_cells(rgb: &[u8], width: i32, height: i32, cols: i32, rows: i32) -> Vec<bool> {
     let w = width as usize;
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn ignores_a_flat_background() {
         let (w, h) = (200, 200);
-        let rgb = vec![30u8; (w * h * 3) as usize]; // uniform — no edges
+        let rgb = vec![30u8; (w * h * 3) as usize]; // uniform, no edges
         assert!(detect(&rgb, w, h, Rect::new(0, 0, w, h), &[], 6).is_empty());
     }
 }

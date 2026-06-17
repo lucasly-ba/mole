@@ -2,8 +2,8 @@
 //!
 //! One binary, two roles:
 //!
-//! * `mole daemon` — the long-running background process.
-//! * everything else (`click`, `teleport`, `drag`, …) — a thin client that
+//! * `mole daemon`: the long-running background process.
+//! * everything else (`click`, `teleport`, `drag`, …): a thin client that
 //!   sends one command to the daemon over its Unix socket. This is what i3 (or
 //!   any WM) execs from a keybinding.
 
